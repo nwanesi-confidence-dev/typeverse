@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-11-20T03:11:52.719Z",
+  "packs": [
+    {
+      "id": "seed-paragraphs-nature-l4-british",
+      "kind": "paragraphs",
+      "theme": "Nature",
+      "level": 4,
+      "spelling": "british",
+      "count": 3,
+      "file": "seed-paragraphs-nature-l4-british.json",
+      "createdAt": 1795054983000,
+      "date": "2026-11-19"
+    },
+    {
+      "id": "seed-sentences-school-l4-british",
+      "kind": "sentences",
+      "theme": "School life",
+      "level": 4,
+      "spelling": "british",
+      "count": 10,
+      "file": "seed-sentences-school-l4-british.json",
+      "createdAt": 1795054982000,
+      "date": "2026-11-19"
+    },
+    {
+      "id": "seed-words-tech-l3-british",
+      "kind": "words",
+      "theme": "Technology",
+      "level": 3,
+      "spelling": "british",
+      "count": 30,
+      "file": "seed-words-tech-l3-british.json",
+      "createdAt": 1795054981000,
+      "date": "2026-11-19"
+    },
+    {
+      "id": "seed-words-everyday-l2-british",
+      "kind": "words",
+      "theme": "Everyday life",
+      "level": 2,
+      "spelling": "british",
+      "count": 30,
+      "file": "seed-words-everyday-l2-british.json",
+      "createdAt": 1795054980000,
+      "date": "2026-11-19"
+    }
+  ]
+}

@@ -1,0 +1,59 @@
+====================================================================
+TypeVerse Desktop — Quick Installation Guide (Students & Teachers)
+====================================================================
+
+TypeVerse works 100% offline. All your typing speed records, lessons,
+profiles, and badges stay saved privately on your own computer.
+
+Because TypeVerse is a free community/classroom app distributed without
+a paid commercial code-signing certificate, Windows and macOS will show
+a standard "unknown publisher" check the first time you open it.
+This is normal for unsigned independent apps — follow the steps below.
+
+
+--------------------------------------------------------------------
+WINDOWS (Windows 10 / Windows 11)
+--------------------------------------------------------------------
+Two versions may be provided:
+  • TypeVerse-Setup-x.y.z.exe     (Standard installer — no Admin needed)
+  • TypeVerse-Portable-x.y.z.exe  (Runs directly from USB or Downloads)
+
+When you double-click the file:
+1. Windows SmartScreen may show a blue window saying:
+   "Windows protected your PC — Microsoft Defender SmartScreen prevented
+   an unrecognized app from starting."
+2. Click "More info" (under the message text).
+3. Click the "Run anyway" button that appears at the bottom.
+4. For the Setup installer, pick any folder you like (your Desktop and
+   Start Menu shortcuts will be created without Administrator rights).
+
+
+--------------------------------------------------------------------
+macOS (Apple Silicon & Intel Macs)
+--------------------------------------------------------------------
+1. Open the downloaded .dmg file and drag TypeVerse into Applications.
+2. When you double-click TypeVerse the first time, macOS may say:
+   '"TypeVerse" cannot be opened because the developer cannot be verified'
+   (or "Apple could not verify TypeVerse is free of malware").
+3. Click "Cancel" / "Done" on that popup, then open TypeVerse once via:
+   - Method A: Open Finder → Applications, hold Control (or right-click)
+     on TypeVerse, choose "Open", then click "Open" in the dialog.
+   - Method B (macOS Sequoia / newer): Open System Settings →
+     Privacy & Security, scroll down to the Security section, click
+     "Open Anyway" next to TypeVerse, and confirm with your Mac password.
+4. After opening it once this way, TypeVerse opens normally every time.
+
+
+--------------------------------------------------------------------
+TROUBLESHOOTING ON OLDER CLASSROOM COMPUTERS
+--------------------------------------------------------------------
+• Screen flickers or looks blank on an older PC?
+  Click "Appearance" in the top-right corner of TypeVerse, scroll down
+  to "Desktop Safety & Data", turn on:
+  "Disable hardware acceleration (use if graphics glitch)"
+  and click "Restart now".
+
+• Moving progress to another computer?
+  Open "Progress" (or "Appearance → Desktop Safety & Data") and click
+  "Export" to save a .json backup file, then "Import" on the new PC.
+====================================================================

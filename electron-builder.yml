@@ -1,0 +1,105 @@
+appId: com.typeverse.app
+productName: TypeVerse
+copyright: Copyright © 2026 TypeVerse Contributors
+asar: true
+npmRebuild: false
+
+directories:
+  buildResources: build
+  output: release
+
+files:
+  - dist/**/*
+  - electron/dist/**/*
+  - build/icon.png
+  - package.json
+  - "!**/*.map"
+  - "!server.ts"
+  - "!src/**/*"
+  - "!shared/**/*"
+  - "!scripts/**/*"
+  - "!electron/main.ts"
+  - "!electron/preload.ts"
+  - "!.env*"
+  - "!node_modules/express/**/*"
+  - "!node_modules/dotenv/**/*"
+  - "!node_modules/vite/**/*"
+  - "!node_modules/@vitejs/**/*"
+  - "!node_modules/@tailwindcss/**/*"
+  - "!node_modules/vite-plugin-pwa/**/*"
+  - "!node_modules/@fontsource/**/*"
+  - "!node_modules/@google/**/*"
+  - "!node_modules/lucide-react/**/*"
+  - "!node_modules/motion/**/*"
+  - "!node_modules/react/**/*"
+  - "!node_modules/react-dom/**/*"
+
+extraResources:
+  - from: INSTALL_GUIDE.txt
+    to: INSTALL_GUIDE.txt
+  - from: packs
+    to: packs
+
+win:
+  icon: build/icon.png
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: TypeVerse
+  deleteAppDataOnUninstall: false
+  artifactName: TypeVerse-Setup-${version}.${ext}
+
+portable:
+  artifactName: TypeVerse-Portable-${version}.${ext}
+
+mac:
+  icon: build/icon.png
+  category: public.app-category.education
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+    - target: zip
+      arch:
+        - x64
+        - arm64
+
+dmg:
+  title: TypeVerse ${version}
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+  artifactName: TypeVerse-${version}-${arch}.${ext}
+
+# Defined for manual Linux builds; not run automatically in default Windows/macOS CI
+linux:
+  icon: build/icon.png
+  category: Education
+  target:
+    - target: AppImage
+      arch:
+        - x64
+  artifactName: TypeVerse-${version}-${arch}.${ext}
+
+publish:
+  - provider: github
+    releaseType: draft

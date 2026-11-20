@@ -1,0 +1,27 @@
+{
+  "geminiModel": "gemini-2.5-flash",
+  "themes": [
+    "School life",
+    "Technology",
+    "Nature",
+    "Business",
+    "Sports",
+    "Stories",
+    "Science",
+    "Everyday life"
+  ],
+  "kinds": ["words", "sentences", "paragraphs", "numbers", "code"],
+  "levels": [1, 2, 3, 4, 5],
+  "spellings": ["british", "american"],
+  "itemsPerPack": {
+    "words": 40,
+    "sentences": 12,
+    "paragraphs": 4,
+    "numbers": 15,
+    "code": 12
+  },
+  "maxCallsPerRun": 12,
+  "delayBetweenCallsMs": 15000,
+  "retentionDays": 14,
+  "maxTotalBytes": 5000000
+}

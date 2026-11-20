@@ -1,0 +1,13 @@
+{
+  "ranAt": "2026-11-20T03:11:52.719Z",
+  "date": "2026-11-20",
+  "dayOfYear": 324,
+  "model": "gemini-2.5-flash",
+  "attempted": 0,
+  "succeeded": 0,
+  "failed": 0,
+  "stoppedEarlyReason": "missing-api-key",
+  "prunedCount": 0,
+  "totalPacks": 4,
+  "totalBytes": 5078
+}

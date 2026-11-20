@@ -1,0 +1,264 @@
+@import "@fontsource/outfit/500.css";
+@import "@fontsource/outfit/600.css";
+@import "@fontsource/outfit/700.css";
+@import "@fontsource/plus-jakarta-sans/400.css";
+@import "@fontsource/plus-jakarta-sans/500.css";
+@import "@fontsource/plus-jakarta-sans/600.css";
+@import "@fontsource/plus-jakarta-sans/700.css";
+@import "@fontsource/jetbrains-mono/400.css";
+@import "@fontsource/jetbrains-mono/500.css";
+@import "@fontsource/jetbrains-mono/600.css";
+@import "@fontsource/jetbrains-mono/700.css";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/500.css";
+@import "@fontsource/ibm-plex-mono/600.css";
+
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root,
+[data-theme="midnight-neon"] {
+  --tv-bg: #080B14;
+  --tv-surface: #0F1629;
+  --tv-surface-elevated: #162038;
+  --tv-glass: rgba(15, 22, 41, 0.78);
+  --tv-border: rgba(148, 163, 184, 0.18);
+  --tv-text: #F1F5F9;
+  --tv-text-muted: #94A3B8;
+  --tv-accent: #22D3EE;
+  --tv-accent-secondary: #10B981;
+  --tv-accent-fg: #04131B;
+  --tv-success: #34D399;
+  --tv-error: #FB7185;
+  --tv-warning: #FBBF24;
+  --tv-glow: rgba(34, 211, 238, 0.18);
+  --tv-font-display: "Outfit", system-ui, sans-serif;
+  --tv-font-body: "Plus Jakarta Sans", system-ui, sans-serif;
+  --tv-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  color-scheme: dark;
+}
+
+[data-theme="aurora"] {
+  --tv-bg: #061214;
+  --tv-surface: #0C1F23;
+  --tv-surface-elevated: #132D32;
+  --tv-glass: rgba(12, 31, 35, 0.8);
+  --tv-border: rgba(94, 234, 212, 0.18);
+  --tv-text: #ECFDF5;
+  --tv-text-muted: #8EB8B1;
+  --tv-accent: #2DD4BF;
+  --tv-accent-secondary: #34D399;
+  --tv-accent-fg: #04211E;
+  --tv-success: #4ADE80;
+  --tv-error: #F87171;
+  --tv-warning: #FCD34D;
+  --tv-glow: rgba(45, 212, 191, 0.18);
+  color-scheme: dark;
+}
+
+[data-theme="sunrise"] {
+  --tv-bg: #FFFBF5;
+  --tv-surface: #FFFFFF;
+  --tv-surface-elevated: #FFF4E5;
+  --tv-glass: rgba(255, 255, 255, 0.88);
+  --tv-border: rgba(146, 64, 14, 0.16);
+  --tv-text: #1F1610;
+  --tv-text-muted: #6E5647;
+  --tv-accent: #C2410C;
+  --tv-accent-secondary: #D97706;
+  --tv-accent-fg: #FFFFFF;
+  --tv-success: #047857;
+  --tv-error: #B91C1C;
+  --tv-warning: #B45309;
+  --tv-glow: rgba(194, 65, 12, 0.14);
+  color-scheme: light;
+}
+
+[data-theme="classroom-light"] {
+  --tv-bg: #F6F8FB;
+  --tv-surface: #FFFFFF;
+  --tv-surface-elevated: #EDF2F7;
+  --tv-glass: rgba(255, 255, 255, 0.9);
+  --tv-border: rgba(15, 23, 42, 0.14);
+  --tv-text: #0F172A;
+  --tv-text-muted: #475569;
+  --tv-accent: #0284C7;
+  --tv-accent-secondary: #059669;
+  --tv-accent-fg: #FFFFFF;
+  --tv-success: #059669;
+  --tv-error: #DC2626;
+  --tv-warning: #D97706;
+  --tv-glow: rgba(2, 132, 199, 0.14);
+  color-scheme: light;
+}
+
+[data-theme="high-contrast"] {
+  --tv-bg: #000000;
+  --tv-surface: #0A0A0A;
+  --tv-surface-elevated: #171717;
+  --tv-glass: rgba(10, 10, 10, 0.96);
+  --tv-border: #FFFFFF;
+  --tv-text: #FFFFFF;
+  --tv-text-muted: #E5E5E5;
+  --tv-accent: #FFD400;
+  --tv-accent-secondary: #00E5FF;
+  --tv-accent-fg: #000000;
+  --tv-success: #00FF88;
+  --tv-error: #FF4D6D;
+  --tv-warning: #FFD400;
+  --tv-glow: rgba(255, 212, 0, 0.24);
+  color-scheme: dark;
+}
+
+@layer base {
+  html,
+  body {
+    background-color: var(--tv-bg);
+    color: var(--tv-text);
+    font-family: var(--tv-font-body);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    min-height: 100%;
+  }
+
+  h1,
+  h2,
+  h3,
+  .font-display {
+    font-family: var(--tv-font-display);
+  }
+
+  .font-typing {
+    font-family: var(--tv-font-mono);
+    font-variant-ligatures: none;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--tv-accent);
+    outline-offset: 2px;
+  }
+}
+
+.tv-surface {
+  background-color: var(--tv-surface);
+  border: 1px solid var(--tv-border);
+}
+
+.tv-glass {
+  background-color: var(--tv-glass);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--tv-border);
+}
+
+.tv-card-hover {
+  transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.tv-card-hover:hover {
+  transform: translateY(-2px);
+  border-color: var(--tv-accent);
+}
+
+@keyframes tv-caret-blink {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0.25;
+  }
+}
+
+.tv-caret-blink {
+  animation: tv-caret-blink 1.05s infinite;
+}
+
+[data-reduced-motion="true"] *,
+[data-reduced-motion="true"] *::before,
+[data-reduced-motion="true"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Typing Arena Character States (Direct DOM attribute styling for zero React re-render) */
+.tv-char {
+  color: var(--tv-text-muted);
+  opacity: 0.65;
+  border-radius: 2px;
+  transition: color 70ms ease, opacity 70ms ease;
+}
+
+.tv-char[data-status="correct"] {
+  color: var(--tv-success);
+  opacity: 1;
+}
+
+.tv-char[data-status="corrected"] {
+  color: var(--tv-warning);
+  opacity: 0.95;
+  text-decoration: underline dotted 1.5px;
+  text-underline-offset: 4px;
+}
+
+.tv-char[data-status="incorrect"] {
+  color: var(--tv-error);
+  opacity: 1;
+  background-color: rgba(251, 113, 133, 0.16);
+  text-decoration: underline wavy 2px;
+  text-underline-offset: 4px;
+}
+
+.tv-char[data-active="true"] {
+  opacity: 1;
+  color: var(--tv-text);
+}
+
+@keyframes tv-shake {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  25% { transform: translate3d(-2px, 0, 0); }
+  75% { transform: translate3d(2px, 0, 0); }
+}
+
+.tv-char-shake {
+  display: inline-block;
+  animation: tv-shake 160ms ease-in-out;
+}
+
+@media print {
+  html,
+  body {
+    --tv-bg: #ffffff;
+    --tv-surface: #ffffff;
+    --tv-surface-elevated: #f8fafc;
+    --tv-border: #cbd5e1;
+    --tv-text: #0f172a;
+    --tv-text-muted: #475569;
+    --tv-accent: #0284c7;
+    --tv-success: #059669;
+    --tv-error: #dc2626;
+    --tv-warning: #d97706;
+    background: #ffffff !important;
+    color: #0f172a !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-only-certificate {
+    display: block !important;
+  }
+}
+
