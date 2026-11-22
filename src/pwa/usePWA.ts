@@ -93,7 +93,13 @@ export function useServiceWorkerUpdate() {
 
   useEffect(() => {
     // Never register a service worker inside the Electron desktop shell
-    if (typeof window === 'undefined' || window.desktop?.isDesktop) return;
+    const isElectronShell =
+      typeof window === 'undefined' ||
+      Boolean(window.desktop?.isDesktop) ||
+      window.location.protocol === 'file:' ||
+      (typeof navigator !== 'undefined' &&
+        navigator.userAgent.toLowerCase().includes('electron'));
+    if (isElectronShell) return;
     // Register service worker ONLY in production builds and fail silently where unsupported (e.g., preview iframes)
     if (!import.meta.env.PROD) return;
     if (!('serviceWorker' in navigator)) return;
