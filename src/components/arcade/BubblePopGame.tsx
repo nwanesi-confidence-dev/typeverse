@@ -1,51 +1,32 @@
-import React, {useEffect, useRef, useState} from 'react';
+import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {Pause, Play, RotateCcw} from 'lucide-react';
+import {
+  BUBBLE_FOCUS_ROWS,
+  BUBBLE_POP_FIELD_HEIGHT,
+  BubblePopEngine,
+} from '@/src/arcade/engine/bubblePopEngine';
+import {
+  renderBubblePop2D,
+  type PopBurst2D,
+} from '@/src/arcade/renderer-2d/BubblePop2D';
+import {BubblePop3D} from '@/src/arcade/renderer-3d/BubblePop3D';
 import {soundEngine} from '@/src/audio/soundEngine';
 import {
-  ArcadeMetricsTracker,
-  type ArcadeCommonProps,
-  type ArcadeDifficulty,
   DIFFICULTY_META,
+  type ArcadeCommonProps,
 } from '@/src/components/arcade/arcadeTypes';
-
-interface Bubble {
-  id: number;
-  text: string;
-  typed: number;
-  x: number; // 0..1
-  baseX: number;
-  y: number; // px from top
-  speed: number;
-  radius: number;
-  color: string;
-  phase: number;
-}
-
-interface PopBurst {
-  x: number;
-  y: number;
-  r: number;
-  life: number;
-  color: string;
-}
-
-const BUBBLE_COLORS = ['#22D3EE', '#34D399', '#F472B6', '#FBBF24', '#A78BFA', '#60A5FA'];
-
-const FOCUS_ROWS: Array<{id: string; label: string; chars: string}> = [
-  {id: 'all', label: 'All Letters', chars: 'abcdefghijklmnopqrstuvwxyz'},
-  {id: 'home', label: 'Home Row', chars: 'asdfghjkl'},
-  {id: 'top', label: 'Top Row', chars: 'qwertyuiop'},
-  {id: 'bottom', label: 'Bottom Row', chars: 'zxcvbnm'},
-];
-
-const BUBBLE_CFG: Record<
-  ArcadeDifficulty,
-  {speed: number; interval: number; maxBubbles: number; goal: number; multiLetter: boolean}
-> = {
-  easy: {speed: 32, interval: 1.15, maxBubbles: 6, goal: 28, multiLetter: false},
-  medium: {speed: 38, interval: 1.5, maxBubbles: 5, goal: 34, multiLetter: true},
-  hard: {speed: 52, interval: 1.2, maxBubbles: 6, goal: 44, multiLetter: true},
-};
+import {
+  ArcadeContextLostOverlay,
+  ArcadePauseOverlay,
+  ArcadeStartBanner,
+  useRoundLockedVisuals,
+} from '@/src/components/arcade/ArcadeVisualsControl';
+import {formatResolvedModeLabel} from '@/src/graphics/decision';
+import {graphicsModeService} from '@/src/graphics/graphicsModeService';
+import type {
+  BubblePop3DState,
+  BubblePopMutableSnapshot,
+} from '@/src/three/scenes/bubblePop3DScene';
 
 export const BubblePopGame: React.FC<ArcadeCommonProps> = ({
   difficulty,
@@ -55,105 +36,77 @@ export const BubblePopGame: React.FC<ArcadeCommonProps> = ({
   onFinish,
   onExit,
 }) => {
-  const cfg = BUBBLE_CFG[difficulty];
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const trackerRef = useRef(new ArcadeMetricsTracker(personalBestWpm));
+  const [restartNonce, setRestartNonce] = useState(0);
+  const [roundStarted, setRoundStarted] = useState(false);
   const [paused, setPaused] = useState(false);
   const [focusRowId, setFocusRowId] = useState('all');
-  const [restartNonce, setRestartNonce] = useState(0);
 
-  const stateRef = useRef({
-    paused: false,
-    finished: false,
-    started: false,
-    lives: 5,
-    popped: 0,
-    score: 0,
-    nextId: 1,
-    lockedId: null as number | null,
-    spawnTimer: 0.25,
-    bubbles: [] as Bubble[],
-    bursts: [] as PopBurst[],
-    composing: false,
-    clock: 0,
-  });
+  const {
+    lockedMode,
+    show3D,
+    webgl2Supported,
+    contextLostOpen,
+    webglRetryNonce,
+    markContextLost,
+    retry3D,
+    continueIn2D,
+  } = useRoundLockedVisuals('bubble-pop', roundStarted, restartNonce);
 
-  const getFocusRow = () =>
-    FOCUS_ROWS.find((r) => r.id === focusRowId) ?? FOCUS_ROWS[0];
-
-  const spawnBubble = (canvasHeight = 360) => {
-    const st = stateRef.current;
-    const row = getFocusRow();
-    let token = 'a';
-
-    if (!cfg.multiLetter) {
-      const used = new Set(st.bubbles.map((b) => b.text));
-      const avail = row.chars.split('').filter((c) => !used.has(c));
-      const list = avail.length > 0 ? avail : row.chars.split('');
-      token = list[Math.floor(Math.random() * list.length)];
-    } else {
-      const allowedSet = new Set(row.chars.split(''));
-      const matching = wordPool.filter(
-        (w) =>
-          w.length >= 2 &&
-          w.length <= (difficulty === 'medium' ? 4 : 6) &&
-          w.split('').every((ch) => allowedSet.has(ch)),
-      );
-      if (matching.length > 0) {
-        token = matching[Math.floor(Math.random() * matching.length)];
-      } else {
-        const len = difficulty === 'medium' ? 3 : 4;
-        token = Array.from(
-          {length: len},
-          () => row.chars[Math.floor(Math.random() * row.chars.length)],
-        ).join('');
-      }
+  const handleWebglContextLost = useCallback(() => {
+    if (engineRef.current.state.started && !engineRef.current.state.finished) {
+      engineRef.current.setPaused(true);
+      setPaused(true);
     }
+    markContextLost();
+  }, [markContextLost]);
 
-    const bx = 0.14 + Math.random() * 0.72;
-    st.bubbles.push({
-      id: st.nextId++,
-      text: token,
-      typed: 0,
-      x: bx,
-      baseX: bx,
-      y: canvasHeight - 24,
-      speed: cfg.speed * (0.85 + Math.random() * 0.3),
-      radius: cfg.multiLetter ? 30 : 24,
-      color: BUBBLE_COLORS[st.nextId % BUBBLE_COLORS.length],
-      phase: Math.random() * Math.PI * 2,
-    });
-  };
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const bursts2DRef = useRef<PopBurst2D[]>([]);
+  const composingRef = useRef(false);
+
+  const engineRef = useRef<BubblePopEngine>(
+    new BubblePopEngine({
+      difficulty,
+      wordPool,
+      focusRowId,
+      personalBestWpm,
+      seed: 303,
+      playedVisuals: show3D ? '3d' : '2d',
+    }),
+  );
+
+  const snapshot3DRef = useRef<BubblePopMutableSnapshot>(engineRef.current.state);
+  const [hudOverlay, setHudOverlay] = useState({lives: 5, popped: 0, score: 0});
 
   useEffect(() => {
-    trackerRef.current = new ArcadeMetricsTracker(personalBestWpm);
-    stateRef.current = {
-      paused: false,
-      finished: false,
-      started: false,
-      lives: 5,
-      popped: 0,
-      score: 0,
-      nextId: 1,
-      lockedId: null,
-      spawnTimer: 0.2,
-      bubbles: [],
-      bursts: [],
-      composing: false,
-      clock: 0,
-    };
+    const eng = new BubblePopEngine({
+      difficulty,
+      wordPool,
+      focusRowId,
+      personalBestWpm,
+      seed: 303 + restartNonce * 23,
+      playedVisuals: show3D ? '3d' : '2d',
+    });
+    engineRef.current = eng;
+    snapshot3DRef.current = eng.state;
+    bursts2DRef.current = [];
+
+    setHudOverlay({lives: 5, popped: 0, score: 0});
     setPaused(false);
-    spawnBubble(360);
-    spawnBubble(360);
-    onTelemetry(trackerRef.current.getSnapshot(0, null));
+    setRoundStarted(false);
+    onTelemetry(eng.getTelemetrySnapshot());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [difficulty, wordPool, focusRowId, restartNonce]);
 
   useEffect(() => {
+    engineRef.current.setVisualsTag(lockedMode === '2d' ? '2d' : '3d');
+  }, [lockedMode]);
+
+  useEffect(() => {
     const onVis = () => {
-      if (document.hidden && stateRef.current.started && !stateRef.current.finished) {
-        stateRef.current.paused = true;
-        trackerRef.current.setPaused(true);
+      const eng = engineRef.current;
+      if (document.hidden && eng.state.started && !eng.state.finished) {
+        eng.setPaused(true);
         setPaused(true);
       }
     };
@@ -163,97 +116,67 @@ export const BubblePopGame: React.FC<ArcadeCommonProps> = ({
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      const st = stateRef.current;
-      if (st.finished || st.composing) return;
+      const eng = engineRef.current;
+      if (eng.state.finished || composingRef.current) return;
       if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
 
-      trackerRef.current.setCapsLock(e.getModifierState('CapsLock'));
+      eng.tracker.setCapsLock(e.getModifierState('CapsLock'));
 
       if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
-        if (!st.started) {
+        if (!eng.state.started) {
           onExit();
           return;
         }
-        const nextPaused = !st.paused;
-        st.paused = nextPaused;
-        trackerRef.current.setPaused(nextPaused);
+        const nextPaused = !eng.state.paused;
+        eng.setPaused(nextPaused);
         setPaused(nextPaused);
         return;
       }
 
-      if (st.paused || e.key.length !== 1) return;
-      const key = e.key.toLowerCase();
-      st.started = true;
+      if (eng.state.paused || e.key.length !== 1) return;
 
-      let target = st.bubbles.find((b) => b.id === st.lockedId);
-      if (!target) {
-        // Prefer highest bubble near top danger line
-        const matches = st.bubbles
-          .filter((b) => b.text[0]?.toLowerCase() === key)
-          .sort((a, b) => a.y - b.y);
-        target = matches[0];
-        if (target) st.lockedId = target.id;
+      if (!eng.state.started) {
+        setRoundStarted(true);
       }
 
-      if (!target) {
-        trackerRef.current.recordKey(key, false);
-        soundEngine.playError();
-        return;
-      }
+      const res = eng.handleKey(e.key);
+      if (!res.handled) return;
 
-      const expected = target.text[target.typed]?.toLowerCase();
-      if (key === expected) {
-        const {combo, multiplier} = trackerRef.current.recordKey(key, true);
-        target.typed++;
-
-        if (target.typed >= target.text.length) {
-          trackerRef.current.recordWordCompleted();
-          st.popped++;
-          st.score += (cfg.multiLetter ? 110 : 60) * multiplier;
-          soundEngine.playBubblePop(combo);
-
+      if (res.correct) {
+        if (res.popped) {
+          soundEngine.playBubblePop(res.combo);
           const canvas = canvasRef.current;
-          if (canvas) {
-            st.bursts.push({
-              x: target.x * canvas.clientWidth,
-              y: target.y,
-              r: target.radius,
+          if (!show3D && canvas && res.burstEvent) {
+            bursts2DRef.current.push({
+              x: res.burstEvent.xNorm * canvas.clientWidth,
+              y: res.burstEvent.yPx,
+              r: res.burstEvent.radius,
               life: 1,
-              color: target.color,
+              color: res.burstEvent.color,
             });
           }
-
-          st.lockedId = null;
-          st.bubbles = st.bubbles.filter((b) => b.id !== target!.id);
-
-          if (st.popped >= cfg.goal && !st.finished) {
-            st.finished = true;
+          if (res.finishedResult) {
             soundEngine.playMilestone();
-            onFinish(
-              trackerRef.current.finalize(
-                `Arcade · Bubble Pop (${DIFFICULTY_META[difficulty].label})`,
-                st.score,
-                true,
-                `Popped all ${cfg.goal} bubbles (${st.score} pts)`,
-              ),
-            );
+            onFinish({
+              ...res.finishedResult,
+              playedVisuals: lockedMode === '2d' ? '2d' : '3d',
+            });
           }
         } else {
-          soundEngine.playKeyClick(Math.min(8, Math.floor(combo / 8)));
+          soundEngine.playKeyClick(Math.min(8, Math.floor(res.combo / 8)));
         }
       } else {
-        trackerRef.current.recordKey(expected ?? key, false);
         soundEngine.playError();
       }
     };
 
     const onCompStart = () => {
-      stateRef.current.composing = true;
+      composingRef.current = true;
     };
     const onCompEnd = () => {
-      stateRef.current.composing = false;
+      composingRef.current = false;
     };
 
     window.addEventListener('keydown', onKeyDown, true);
@@ -264,7 +187,7 @@ export const BubblePopGame: React.FC<ArcadeCommonProps> = ({
       window.removeEventListener('compositionstart', onCompStart);
       window.removeEventListener('compositionend', onCompEnd);
     };
-  }, [cfg.goal, cfg.multiLetter, difficulty, onFinish, onExit]);
+  }, [lockedMode, show3D, onFinish, onExit]);
 
   useEffect(() => {
     let raf = 0;
@@ -274,150 +197,45 @@ export const BubblePopGame: React.FC<ArcadeCommonProps> = ({
     const loop = (now: number) => {
       const dt = Math.min(0.05, (now - lastTs) / 1000);
       lastTs = now;
-      const st = stateRef.current;
+      const eng = engineRef.current;
       const canvas = canvasRef.current;
 
-      if (canvas) {
-        const dpr = window.devicePixelRatio || 1;
-        const w = canvas.clientWidth;
-        const h = canvas.clientHeight;
-        if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
-          canvas.width = Math.round(w * dpr);
-          canvas.height = Math.round(h * dpr);
-        }
+      const h = !show3D && canvas ? canvas.clientHeight : BUBBLE_POP_FIELD_HEIGHT;
+      const stepRes = eng.step(dt, h, now);
 
-        if (!st.paused && !st.finished && st.started) {
-          st.clock += dt;
-          st.spawnTimer -= dt;
-          if (st.spawnTimer <= 0 && st.bubbles.length < cfg.maxBubbles) {
-            spawnBubble(h);
-            st.spawnTimer = cfg.interval;
-          }
+      if (stepRes.escapedCount > 0) {
+        soundEngine.playHitChime('miss');
+      }
+      if (stepRes.finishedResult) {
+        soundEngine.playMilestone();
+        onFinish({
+          ...stepRes.finishedResult,
+          playedVisuals: lockedMode === '2d' ? '2d' : '3d',
+        });
+      }
 
-          for (let i = st.bubbles.length - 1; i >= 0; i--) {
-            const b = st.bubbles[i];
-            b.y -= b.speed * dt;
-            b.x = b.baseX + Math.sin(st.clock * 2 + b.phase) * 0.025;
-            if (b.y <= 34) {
-              st.bubbles.splice(i, 1);
-              if (st.lockedId === b.id) st.lockedId = null;
-              st.lives--;
-              soundEngine.playHitChime('miss');
-              if (st.lives <= 0 && !st.finished) {
-                st.finished = true;
-                onFinish(
-                  trackerRef.current.finalize(
-                    `Arcade · Bubble Pop (${DIFFICULTY_META[difficulty].label})`,
-                    st.score,
-                    false,
-                    `Bubbles escaped at ${st.popped}/${cfg.goal}`,
-                  ),
-                );
-              }
-            }
-          }
-        }
-
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.save();
-          ctx.scale(dpr, dpr);
-
-          const bg = ctx.createLinearGradient(0, 0, 0, h);
-          bg.addColorStop(0, '#0B132B');
-          bg.addColorStop(1, '#162447');
-          ctx.fillStyle = bg;
-          ctx.fillRect(0, 0, w, h);
-
-          // Top spike / escape threshold
-          ctx.strokeStyle = 'rgba(251, 113, 133, 0.45)';
-          ctx.lineWidth = 2;
-          ctx.setLineDash([8, 6]);
-          ctx.beginPath();
-          ctx.moveTo(0, 38);
-          ctx.lineTo(w, 38);
-          ctx.stroke();
-          ctx.setLineDash([]);
-
-          for (let i = st.bursts.length - 1; i >= 0; i--) {
-            const bt = st.bursts[i];
-            bt.r += dt * 70;
-            bt.life -= dt * 3;
-            if (bt.life <= 0) {
-              st.bursts.splice(i, 1);
-            } else {
-              ctx.strokeStyle = bt.color;
-              ctx.globalAlpha = bt.life;
-              ctx.lineWidth = 2.5;
-              ctx.beginPath();
-              ctx.arc(bt.x, bt.y, bt.r, 0, Math.PI * 2);
-              ctx.stroke();
-            }
-          }
-          ctx.globalAlpha = 1;
-
-          for (const b of st.bubbles) {
-            const bx = b.x * w;
-            const by = b.y;
-            const locked = st.lockedId === b.id;
-
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
-            ctx.strokeStyle = locked ? '#FFFFFF' : b.color;
-            ctx.lineWidth = locked ? 3 : 2;
-            ctx.beginPath();
-            ctx.arc(bx, by, b.radius, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.stroke();
-
-            // Specular highlight
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
-            ctx.beginPath();
-            ctx.arc(bx - b.radius * 0.35, by - b.radius * 0.35, b.radius * 0.18, 0, Math.PI * 2);
-            ctx.fill();
-
-            ctx.font = cfg.multiLetter
-              ? '700 14px "JetBrains Mono", monospace'
-              : '700 20px "JetBrains Mono", monospace';
-            const typedStr = b.text.slice(0, b.typed);
-            const restStr = b.text.slice(b.typed);
-            const fullW = ctx.measureText(b.text).width;
-            const sx = bx - fullW / 2;
-            ctx.textAlign = 'left';
-            ctx.fillStyle = '#34D399';
-            ctx.fillText(typedStr, sx, by + 6);
-            const tw = ctx.measureText(typedStr).width;
-            ctx.fillStyle = '#F8FAFC';
-            ctx.fillText(restStr, sx + tw, by + 6);
-          }
-
-          ctx.fillStyle = '#E2E8F0';
-          ctx.font = '700 13px "JetBrains Mono", monospace';
-          ctx.textAlign = 'left';
-          ctx.fillText(
-            `LIVES ${'●'.repeat(Math.max(0, st.lives))}   POPPED ${st.popped}/${cfg.goal}   SCORE ${st.score}`,
-            16,
-            24,
-          );
-
-          ctx.restore();
-        }
+      if (!show3D && canvas) {
+        renderBubblePop2D({
+          canvas,
+          state: eng.state,
+          goal: eng.cfg.goal,
+          multiLetter: eng.cfg.multiLetter,
+          bursts: bursts2DRef.current,
+          dtSec: dt,
+        });
       }
 
       if (now - lastHud >= 33) {
         lastHud = now;
-        const locked = stateRef.current.bubbles.find(
-          (b) => b.id === stateRef.current.lockedId,
-        );
-        const nextChar = locked
-          ? locked.text[locked.typed] ?? null
-          : stateRef.current.bubbles[0]?.text[0] ?? null;
-        onTelemetry(
-          trackerRef.current.getSnapshot(
-            stateRef.current.popped / cfg.goal,
-            nextChar,
-            now,
-          ),
-        );
+        if (show3D) {
+          const cur = eng.state;
+          setHudOverlay((prev) =>
+            prev.lives === cur.lives && prev.popped === cur.popped && prev.score === cur.score
+              ? prev
+              : {lives: cur.lives, popped: cur.popped, score: cur.score},
+          );
+        }
+        onTelemetry(eng.getTelemetrySnapshot(now));
       }
 
       raf = window.requestAnimationFrame(loop);
@@ -425,8 +243,21 @@ export const BubblePopGame: React.FC<ArcadeCommonProps> = ({
 
     raf = window.requestAnimationFrame(loop);
     return () => window.cancelAnimationFrame(raf);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cfg.goal, cfg.interval, cfg.maxBubbles, cfg.multiLetter, difficulty, focusRowId, onFinish, onTelemetry]);
+  }, [difficulty, focusRowId, lockedMode, show3D, onFinish, onTelemetry]);
+
+  const bubble3DState: BubblePop3DState = useMemo(
+    () => ({
+      gameRef: snapshot3DRef,
+      fieldHeight: BUBBLE_POP_FIELD_HEIGHT,
+    }),
+    [focusRowId, restartNonce],
+  );
+
+  const togglePause = () => {
+    const next = !paused;
+    engineRef.current.setPaused(next);
+    setPaused(next);
+  };
 
   return (
     <div className="tv-surface rounded-2xl p-5 space-y-4">
@@ -435,7 +266,7 @@ export const BubblePopGame: React.FC<ArcadeCommonProps> = ({
           <span className="text-xs font-medium" style={{color: 'var(--tv-text-muted)'}}>
             Focus row:
           </span>
-          {FOCUS_ROWS.map((row) => (
+          {BUBBLE_FOCUS_ROWS.map((row) => (
             <button
               key={row.id}
               type="button"
@@ -456,17 +287,18 @@ export const BubblePopGame: React.FC<ArcadeCommonProps> = ({
               {row.label}
             </button>
           ))}
+          <span
+            className="rounded-md border px-2 py-0.5 text-[11px] font-semibold"
+            style={{borderColor: 'var(--tv-border)', backgroundColor: 'var(--tv-bg)', color: 'var(--tv-text-muted)'}}
+          >
+            {formatResolvedModeLabel(lockedMode)}
+          </span>
         </div>
 
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => {
-              const next = !paused;
-              stateRef.current.paused = next;
-              trackerRef.current.setPaused(next);
-              setPaused(next);
-            }}
+            onClick={togglePause}
             className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs"
             style={{borderColor: 'var(--tv-border)'}}
           >
@@ -485,28 +317,60 @@ export const BubblePopGame: React.FC<ArcadeCommonProps> = ({
         </div>
       </div>
 
-      <div className="relative rounded-xl overflow-hidden border" style={{borderColor: 'var(--tv-border)'}}>
-        <canvas
-          ref={canvasRef}
-          className="block w-full h-[360px]"
-          aria-label="Bubble Pop canvas"
+      {!roundStarted && !paused && (
+        <ArcadeStartBanner
+          gameId="bubble-pop"
+          title="Bubble Pop"
+          difficultyLabel={DIFFICULTY_META[difficulty].label}
+          hint="Press Start Round or pop the first bubble letter to begin."
+          onStart={() => {
+            engineRef.current.start();
+            setRoundStarted(true);
+          }}
         />
-        {paused && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/70 backdrop-blur-xs">
-            <div className="font-display text-xl font-bold text-white">Game Paused</div>
-            <button
-              type="button"
-              onClick={() => {
-                stateRef.current.paused = false;
-                trackerRef.current.setPaused(false);
-                setPaused(false);
-              }}
-              className="rounded-xl px-4 py-2 text-xs font-semibold"
-              style={{backgroundColor: 'var(--tv-accent)', color: 'var(--tv-accent-fg)'}}
-            >
-              Resume Game
-            </button>
-          </div>
+      )}
+
+      <div className="relative rounded-xl overflow-hidden border" style={{borderColor: 'var(--tv-border)'}}>
+        {show3D ? (
+          <BubblePop3D
+            gameId="bubble-pop"
+            forcedMode={lockedMode}
+            retryNonce={webglRetryNonce}
+            onContextLostPermanent={handleWebglContextLost}
+            sceneState={bubble3DState}
+            goal={engineRef.current.cfg.goal}
+            hud={hudOverlay}
+          />
+        ) : (
+          <canvas
+            ref={canvasRef}
+            className="block w-full h-[360px]"
+            aria-label="Bubble Pop canvas"
+          />
+        )}
+        {contextLostOpen && (
+          <ArcadeContextLostOverlay
+            onRetry3D={retry3D}
+            onContinueIn2D={continueIn2D}
+          />
+        )}
+        {paused && !contextLostOpen && (
+          <ArcadePauseOverlay
+            gameId="bubble-pop"
+            title="Game Paused"
+            resumeLabel="Resume Game"
+            lockedMode={lockedMode}
+            webgl2Supported={webgl2Supported}
+            onResume={() => {
+              engineRef.current.setPaused(false);
+              setPaused(false);
+            }}
+            onRestart={() => setRestartNonce((n) => n + 1)}
+            onSwitchVisualsConfirmed={async (nextOverride) => {
+              await graphicsModeService.setGameOverride('bubble-pop', nextOverride);
+              setRestartNonce((n) => n + 1);
+            }}
+          />
         )}
       </div>
     </div>

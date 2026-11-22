@@ -14,11 +14,19 @@ import {KeyboardHeatmap} from '@/src/components/KeyboardHeatmap';
 import {
   createEmptyProgress,
   getActiveProfileId,
+  loadGraphicsState,
   loadProfileProgress,
   loadProfiles,
+  saveGraphicsState,
   saveProfileProgress,
 } from '@/src/db/storage';
-import type {ProfileProgress, SceneId, UserProfile} from '@/src/types/app';
+import {graphicsModeService} from '@/src/graphics/graphicsModeService';
+import type {
+  PersistedGraphicsState,
+  ProfileProgress,
+  SceneId,
+  UserProfile,
+} from '@/src/types/app';
 import type {DesktopBackupSnapshot} from '@/src/types/desktop';
 import type {CompletedSessionStats} from '@/src/types/typing';
 import {downloadCertificatePng} from '@/src/utils/certificate';
@@ -154,6 +162,7 @@ export const DashboardScene: React.FC<DashboardSceneProps> = ({
     if (!progress) return;
     const parsed = JSON.parse(raw) as Partial<DesktopBackupSnapshot> & {
       progress?: Partial<ProfileProgress>;
+      graphicsState?: Partial<PersistedGraphicsState>;
     };
     if (Array.isArray(parsed.profiles) && parsed.progressByProfile) {
       const ok = await applyBackupSnapshotToStorage(parsed);
@@ -161,6 +170,7 @@ export const DashboardScene: React.FC<DashboardSceneProps> = ({
         setStatusMessage('Invalid backup file format.');
         return;
       }
+      await graphicsModeService.reloadFromStorage();
       const nextProg = await loadProfileProgress(progress.profileId);
       setProgress(nextProg);
       await flushDesktopBackupNow();
@@ -177,6 +187,14 @@ export const DashboardScene: React.FC<DashboardSceneProps> = ({
       profileId: progress.profileId,
     };
     await saveProfileProgress(restored);
+    if (parsed.graphicsState && typeof parsed.graphicsState === 'object') {
+      const currentGfx = await loadGraphicsState();
+      await saveGraphicsState({
+        ...currentGfx,
+        ...parsed.graphicsState,
+      });
+      await graphicsModeService.reloadFromStorage();
+    }
     setProgress(restored);
     await flushDesktopBackupNow();
     setStatusMessage('Progress imported and restored successfully.');
@@ -196,11 +214,13 @@ export const DashboardScene: React.FC<DashboardSceneProps> = ({
       }
       return;
     }
+    const graphicsState = await loadGraphicsState();
     const payload = {
       exportedAt: new Date().toISOString(),
       version: 1,
       profile,
       progress,
+      graphicsState,
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], {
       type: 'application/json',
@@ -378,7 +398,7 @@ export const DashboardScene: React.FC<DashboardSceneProps> = ({
       {/* Lifetime Stats + XP Ladder + Daily Goal Ring */}
       <section className="grid grid-cols-1 lg:grid-cols-12 gap-5">
         <div className="lg:col-span-8 grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div className="tv-surface rounded-xl p-4">
+          <div className="tv-surface tv-dash-card rounded-xl p-4">
             <div className="text-xs" style={{color: 'var(--tv-text-muted)'}}>Best Net Speed</div>
             <div className="font-typing text-3xl font-bold tabular-nums mt-1" style={{color: 'var(--tv-accent)'}}>
               {progress?.bestWpm ?? 0}
@@ -386,7 +406,7 @@ export const DashboardScene: React.FC<DashboardSceneProps> = ({
             <div className="text-[11px] mt-1" style={{color: 'var(--tv-text-muted)'}}>WPM record</div>
           </div>
 
-          <div className="tv-surface rounded-xl p-4">
+          <div className="tv-surface tv-dash-card rounded-xl p-4">
             <div className="text-xs" style={{color: 'var(--tv-text-muted)'}}>Avg Accuracy</div>
             <div className="font-typing text-3xl font-bold tabular-nums mt-1" style={{color: 'var(--tv-success)'}}>
               {avgAccuracy}%
@@ -396,7 +416,7 @@ export const DashboardScene: React.FC<DashboardSceneProps> = ({
             </div>
           </div>
 
-          <div className="tv-surface rounded-xl p-4">
+          <div className="tv-surface tv-dash-card rounded-xl p-4">
             <div className="text-xs" style={{color: 'var(--tv-text-muted)'}}>Words Typed</div>
             <div className="font-typing text-3xl font-bold tabular-nums mt-1">
               {(progress?.totalWordsTyped ?? 0).toLocaleString()}
@@ -406,7 +426,7 @@ export const DashboardScene: React.FC<DashboardSceneProps> = ({
             </div>
           </div>
 
-          <div className="tv-surface rounded-xl p-4">
+          <div className="tv-surface tv-dash-card rounded-xl p-4">
             <div className="text-xs" style={{color: 'var(--tv-text-muted)'}}>Current Streak</div>
             <div className="font-typing text-3xl font-bold tabular-nums mt-1 flex items-center gap-1.5">
               <Flame className="w-6 h-6" style={{color: 'var(--tv-warning)'}} aria-hidden="true" />
@@ -418,16 +438,16 @@ export const DashboardScene: React.FC<DashboardSceneProps> = ({
           </div>
 
           {/* XP Ladder Bar */}
-          <div className="col-span-2 sm:col-span-4 tv-surface rounded-xl p-4 space-y-2">
+          <div className="col-span-2 sm:col-span-4 tv-surface tv-dash-card rounded-xl p-4 space-y-2">
             <div className="flex items-center justify-between text-xs">
               <span className="font-semibold">XP Ladder · {rank.current.name}</span>
               <span className="font-typing tabular-nums" style={{color: 'var(--tv-text-muted)'}}>
                 {rank.progressPct}% to next rank
               </span>
             </div>
-            <div className="h-2.5 w-full rounded-full overflow-hidden" style={{backgroundColor: 'var(--tv-bg)'}}>
+            <div className="tv-bar-3d-track h-2.5 w-full rounded-full overflow-hidden" style={{backgroundColor: 'var(--tv-bg)'}}>
               <div
-                className="h-full rounded-full"
+                className="tv-bar-3d-fill h-full rounded-full"
                 style={{width: `${rank.progressPct}%`, backgroundColor: 'var(--tv-accent)'}}
               />
             </div>
@@ -443,7 +463,7 @@ export const DashboardScene: React.FC<DashboardSceneProps> = ({
         </div>
 
         {/* Goals & Daily Progress Ring */}
-        <div className="lg:col-span-4 tv-surface rounded-2xl p-5 flex flex-col justify-between gap-4">
+        <div className="lg:col-span-4 tv-surface tv-dash-card rounded-2xl p-5 flex flex-col justify-between gap-4">
           <div className="flex items-center gap-4">
             <svg width="84" height="84" viewBox="0 0 84 84" className="shrink-0" aria-label="Daily goal progress ring">
               <circle cx="42" cy="42" r={ringR} fill="none" stroke="var(--tv-border)" strokeWidth="7" />

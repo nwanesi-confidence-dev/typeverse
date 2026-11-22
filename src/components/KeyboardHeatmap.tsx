@@ -1,5 +1,10 @@
-import React, {useMemo, useState} from 'react';
+import React, {useCallback, useMemo, useState} from 'react';
+import {useGraphicsMode} from '@/src/graphics/graphicsModeService';
+import {ThreeCanvasHost} from '@/src/three/ThreeCanvasHost';
+import type {Heatmap3DState} from '@/src/three/scenes/heatmap3DScene';
 import type {KeyAggregateMetric} from '@/src/types/app';
+
+const loadHeatmap3DScene = () => import('@/src/three/scenes/heatmap3DScene');
 
 const HEATMAP_ROWS: string[][] = [
   ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '='],
@@ -19,11 +24,37 @@ export const KeyboardHeatmap: React.FC<KeyboardHeatmapProps> = ({
   selectedKeys = [],
   onToggleKey,
 }) => {
+  const gfx = useGraphicsMode();
+  const canUse3D =
+    gfx.effectiveMode !== '2d' &&
+    gfx.hardwareReport.webglSupported &&
+    gfx.hardwareReport.webgl2Supported;
+  const [viewMode, setViewMode] = useState<'3d' | '2d'>('3d');
   const [metricView, setMetricView] = useState<'speed' | 'accuracy'>('speed');
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
 
+  const show3D = canUse3D && viewMode === '3d';
   const inspectedKey = hoveredKey ?? selectedKeys[0] ?? 'e';
   const inspectedStat = keyMetrics[inspectedKey];
+
+  const handleToggleKey = useCallback(
+    (k: string) => {
+      onToggleKey?.(k);
+    },
+    [onToggleKey],
+  );
+
+  const heatmap3DState: Heatmap3DState = useMemo(
+    () => ({
+      keyMetrics,
+      metricView,
+      selectedKeys,
+      hoveredKey,
+      onHoverKey: setHoveredKey,
+      onToggleKey: onToggleKey ? handleToggleKey : undefined,
+    }),
+    [keyMetrics, metricView, selectedKeys, hoveredKey, onToggleKey, handleToggleKey],
+  );
 
   const getKeyTone = (k: string) => {
     const stat = keyMetrics[k];
@@ -111,85 +142,147 @@ export const KeyboardHeatmap: React.FC<KeyboardHeatmapProps> = ({
   }, [inspectedStat]);
 
   return (
-    <div className="tv-surface rounded-2xl p-5 space-y-4">
+    <div className="tv-surface tv-dash-card rounded-2xl p-5 space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h3 className="font-display text-base font-bold">Keyboard Telemetry Heatmap</h3>
+          <h3 className="font-display text-base font-bold">
+            Keyboard Telemetry Heatmap{show3D ? ' (3D Height Map)' : ''}
+          </h3>
           <p className="text-xs" style={{color: 'var(--tv-text-muted)'}}>
-            {onToggleKey
-              ? 'Click any keys to target them in a custom drill, or hover to inspect speed & accuracy.'
-              : 'Hover any key to inspect average latency and error rate.'}
+            {show3D
+              ? onToggleKey
+                ? 'Taller columns mark slower or error-prone keys. Click any 3D key to target it.'
+                : 'Taller columns mark slower or error-prone keys. Hover to inspect.'
+              : onToggleKey
+                ? 'Click any keys to target them in a custom drill, or hover to inspect speed & accuracy.'
+                : 'Hover any key to inspect average latency and error rate.'}
           </p>
         </div>
 
-        <div
-          className="flex items-center gap-1 rounded-xl border p-1"
-          style={{backgroundColor: 'var(--tv-bg)', borderColor: 'var(--tv-border)'}}
-        >
-          <button
-            type="button"
-            onClick={() => setMetricView('speed')}
-            className="rounded-lg px-3 py-1 text-xs font-semibold transition-colors"
-            style={{
-              backgroundColor: metricView === 'speed' ? 'var(--tv-accent)' : 'transparent',
-              color: metricView === 'speed' ? 'var(--tv-accent-fg)' : 'var(--tv-text-muted)',
-            }}
+        <div className="flex flex-wrap items-center gap-2">
+          {canUse3D && (
+            <div
+              className="flex items-center gap-1 rounded-xl border p-1"
+              style={{backgroundColor: 'var(--tv-bg)', borderColor: 'var(--tv-border)'}}
+            >
+              <button
+                type="button"
+                onClick={() => setViewMode('3d')}
+                className="rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors"
+                style={{
+                  backgroundColor: viewMode === '3d' ? 'var(--tv-accent)' : 'transparent',
+                  color: viewMode === '3d' ? 'var(--tv-accent-fg)' : 'var(--tv-text-muted)',
+                }}
+              >
+                3D Height Map
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('2d')}
+                className="rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors"
+                style={{
+                  backgroundColor: viewMode === '2d' ? 'var(--tv-accent)' : 'transparent',
+                  color: viewMode === '2d' ? 'var(--tv-accent-fg)' : 'var(--tv-text-muted)',
+                }}
+              >
+                2D Grid
+              </button>
+            </div>
+          )}
+
+          <div
+            className="flex items-center gap-1 rounded-xl border p-1"
+            style={{backgroundColor: 'var(--tv-bg)', borderColor: 'var(--tv-border)'}}
           >
-            Speed (ms)
-          </button>
-          <button
-            type="button"
-            onClick={() => setMetricView('accuracy')}
-            className="rounded-lg px-3 py-1 text-xs font-semibold transition-colors"
-            style={{
-              backgroundColor: metricView === 'accuracy' ? 'var(--tv-accent)' : 'transparent',
-              color: metricView === 'accuracy' ? 'var(--tv-accent-fg)' : 'var(--tv-text-muted)',
-            }}
-          >
-            Accuracy (%)
-          </button>
+            <button
+              type="button"
+              onClick={() => setMetricView('speed')}
+              className="rounded-lg px-3 py-1 text-xs font-semibold transition-colors"
+              style={{
+                backgroundColor: metricView === 'speed' ? 'var(--tv-accent)' : 'transparent',
+                color: metricView === 'speed' ? 'var(--tv-accent-fg)' : 'var(--tv-text-muted)',
+              }}
+            >
+              Speed (ms)
+            </button>
+            <button
+              type="button"
+              onClick={() => setMetricView('accuracy')}
+              className="rounded-lg px-3 py-1 text-xs font-semibold transition-colors"
+              style={{
+                backgroundColor: metricView === 'accuracy' ? 'var(--tv-accent)' : 'transparent',
+                color: metricView === 'accuracy' ? 'var(--tv-accent-fg)' : 'var(--tv-text-muted)',
+              }}
+            >
+              Accuracy (%)
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Heatmap Key Grid */}
-      <div className="mx-auto max-w-[740px] space-y-1.5">
-        {HEATMAP_ROWS.map((row, rIdx) => (
+      {/* 3D Height Map OR 2D Heatmap Key Grid */}
+      {show3D ? (
+        <div
+          className="relative h-[280px] sm:h-[310px] w-full rounded-xl border overflow-hidden"
+          style={{backgroundColor: 'var(--tv-bg)', borderColor: 'var(--tv-border)'}}
+        >
+          <ThreeCanvasHost
+            loadScene={loadHeatmap3DScene}
+            sceneKey="heatmap-3d"
+            sceneState={heatmap3DState}
+            className="w-full h-full"
+          />
           <div
-            key={rIdx}
-            className="flex justify-center gap-1.5"
-            style={{paddingLeft: `${rIdx * 10}px`}}
+            className="pointer-events-none absolute top-3 left-3 z-10 rounded-lg border px-2.5 py-1 text-[11px] font-medium"
+            style={{
+              backgroundColor: 'var(--tv-surface)',
+              borderColor: 'var(--tv-border)',
+              color: 'var(--tv-text-muted)',
+            }}
           >
-            {row.map((k) => {
-              const tone = getKeyTone(k);
-              const isSelected = selectedKeys.includes(k);
-              return (
-                <button
-                  key={k}
-                  type="button"
-                  onMouseEnter={() => setHoveredKey(k)}
-                  onFocus={() => setHoveredKey(k)}
-                  onClick={() => onToggleKey?.(k)}
-                  className="flex flex-col items-center justify-center rounded-lg border h-12 flex-1 max-w-[54px] transition-transform hover:-translate-y-0.5"
-                  style={{
-                    backgroundColor: tone.bg,
-                    borderColor: isSelected ? 'var(--tv-text)' : tone.border,
-                    borderWidth: isSelected ? '2px' : '1px',
-                    boxShadow: isSelected ? '0 0 0 2px var(--tv-accent)' : undefined,
-                    color: tone.text,
-                  }}
-                >
-                  <span className="font-typing text-xs font-bold uppercase leading-none">
-                    {k}
-                  </span>
-                  <span className="font-typing text-[10px] tabular-nums opacity-80 mt-1 leading-none">
-                    {tone.sub}
-                  </span>
-                </button>
-              );
-            })}
+            Height = key weakness · Move pointer to tilt
           </div>
-        ))}
-      </div>
+        </div>
+      ) : (
+        <div className="mx-auto max-w-[740px] space-y-1.5">
+          {HEATMAP_ROWS.map((row, rIdx) => (
+            <div
+              key={rIdx}
+              className="flex justify-center gap-1.5"
+              style={{paddingLeft: `${rIdx * 10}px`}}
+            >
+              {row.map((k) => {
+                const tone = getKeyTone(k);
+                const isSelected = selectedKeys.includes(k);
+                return (
+                  <button
+                    key={k}
+                    type="button"
+                    onMouseEnter={() => setHoveredKey(k)}
+                    onFocus={() => setHoveredKey(k)}
+                    onClick={() => onToggleKey?.(k)}
+                    className="flex flex-col items-center justify-center rounded-lg border h-12 flex-1 max-w-[54px] transition-transform hover:-translate-y-0.5"
+                    style={{
+                      backgroundColor: tone.bg,
+                      borderColor: isSelected ? 'var(--tv-text)' : tone.border,
+                      borderWidth: isSelected ? '2px' : '1px',
+                      boxShadow: isSelected ? '0 0 0 2px var(--tv-accent)' : undefined,
+                      color: tone.text,
+                    }}
+                  >
+                    <span className="font-typing text-xs font-bold uppercase leading-none">
+                      {k}
+                    </span>
+                    <span className="font-typing text-[10px] tabular-nums opacity-80 mt-1 leading-none">
+                      {tone.sub}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Inspection & Legend Bar */}
       <div

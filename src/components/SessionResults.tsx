@@ -9,8 +9,14 @@ import {
   Target,
 } from 'lucide-react';
 import {useAppearance} from '@/src/context/AppearanceContext';
+import {useGraphicsMode} from '@/src/graphics/graphicsModeService';
+import {ThreeCanvasHost} from '@/src/three/ThreeCanvasHost';
+import type {ResultsTrophyState} from '@/src/three/scenes/resultsTrophyScene';
 import type {CompletedSessionStats} from '@/src/types/typing';
 import {downloadCertificatePng} from '@/src/utils/certificate';
+
+const loadResultsTrophyScene = () =>
+  import('@/src/three/scenes/resultsTrophyScene');
 
 interface SessionResultsProps {
   stats: CompletedSessionStats;
@@ -30,6 +36,21 @@ export const SessionResults: React.FC<SessionResultsProps> = ({
   showCertificate = true,
 }) => {
   const {settings, copy} = useAppearance();
+  const gfx = useGraphicsMode();
+  const show3DTrophy =
+    gfx.effectiveMode !== '2d' &&
+    gfx.hardwareReport.webglSupported &&
+    gfx.hardwareReport.webgl2Supported;
+
+  const trophyState: ResultsTrophyState = useMemo(
+    () => ({
+      stars: stats.stars,
+      isNewBest: Boolean(stats.isNewBest),
+      passed: stats.passed,
+    }),
+    [stats.stars, stats.isNewBest, stats.passed],
+  );
+
   const [displayWpm, setDisplayWpm] = useState(
     settings.reducedMotion ? stats.netWpm : 0,
   );
@@ -61,9 +82,9 @@ export const SessionResults: React.FC<SessionResultsProps> = ({
     return () => window.cancelAnimationFrame(raf);
   }, [stats.netWpm, stats.accuracy, settings.reducedMotion]);
 
-  // Confetti burst on new Personal Best
+  // Classic 2D Confetti burst when 3D is Off
   useEffect(() => {
-    if (!stats.isNewBest || settings.reducedMotion) return;
+    if (show3DTrophy || !stats.isNewBest || settings.reducedMotion) return;
     const canvas = confettiCanvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -109,7 +130,7 @@ export const SessionResults: React.FC<SessionResultsProps> = ({
     };
     raf = window.requestAnimationFrame(step);
     return () => window.cancelAnimationFrame(raf);
-  }, [stats.isNewBest, settings.reducedMotion]);
+  }, [show3DTrophy, stats.isNewBest, settings.reducedMotion]);
 
   // Build SVG WPM-over-time graph points
   const chartData = useMemo(() => {
@@ -134,10 +155,10 @@ export const SessionResults: React.FC<SessionResultsProps> = ({
 
   return (
     <section
-      className="tv-surface relative overflow-hidden rounded-2xl p-6 sm:p-8 space-y-6"
+      className="tv-surface tv-dash-card relative overflow-hidden rounded-2xl p-6 sm:p-8 space-y-6"
       aria-label="Session Results"
     >
-      {stats.isNewBest && (
+      {!show3DTrophy && stats.isNewBest && (
         <canvas
           ref={confettiCanvasRef}
           className="pointer-events-none absolute inset-0 w-full h-full z-10"
@@ -145,11 +166,45 @@ export const SessionResults: React.FC<SessionResultsProps> = ({
         />
       )}
 
+      {/* Procedural 3D Trophy / Medal & Instanced Confetti Banner */}
+      {show3DTrophy && (
+        <div
+          className="relative z-20 h-40 sm:h-44 w-full rounded-xl border overflow-hidden"
+          style={{backgroundColor: 'var(--tv-bg)', borderColor: 'var(--tv-border)'}}
+        >
+          <ThreeCanvasHost
+            loadScene={loadResultsTrophyScene}
+            sceneKey="results-trophy-3d"
+            sceneState={trophyState}
+            className="w-full h-full pointer-events-none"
+          />
+          <div className="pointer-events-none absolute left-4 bottom-3 z-10 text-xs font-medium" style={{color: 'var(--tv-text-muted)'}}>
+            {stats.isNewBest
+              ? 'Champion Chalice · Personal Best Unlocked'
+              : stats.stars >= 3
+                ? 'Gold Trophy · 3-Star Mastery'
+                : `${stats.stars}-Star Commendation Medal`}
+          </div>
+        </div>
+      )}
+
       {/* Header Row */}
       <div className="relative z-20 flex flex-wrap items-center justify-between gap-4 pb-5 border-b" style={{borderColor: 'var(--tv-border)'}}>
         <div className="space-y-1">
-          <div className="text-xs font-medium" style={{color: 'var(--tv-accent)'}}>
-            {stats.subMode} Complete · +{stats.xpEarned} XP
+          <div className="text-xs font-medium flex flex-wrap items-center gap-2" style={{color: 'var(--tv-accent)'}}>
+            <span>{stats.subMode} Complete · +{stats.xpEarned} XP</span>
+            {stats.playedVisuals && (
+              <span
+                className="rounded-md border px-2 py-0.5 text-[11px] font-semibold"
+                style={{
+                  borderColor: 'var(--tv-border)',
+                  backgroundColor: 'var(--tv-bg)',
+                  color: 'var(--tv-text-muted)',
+                }}
+              >
+                Played in {stats.playedVisuals === '3d' ? '3D' : '2D'}
+              </span>
+            )}
           </div>
           <h2 className="font-display text-3xl font-bold tracking-tight flex items-center gap-3">
             <span>Session Summary</span>

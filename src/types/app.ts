@@ -13,6 +13,107 @@ export type SpellingVariant = 'british' | 'american';
 export type BackspaceMode = 'standard' | 'strict' | 'forgiving';
 export type PackKind = 'words' | 'sentences' | 'paragraphs' | 'numbers' | 'code';
 
+export type GraphicsModePreference = 'auto' | '3d' | '2d';
+export type GraphicsDetailLevel = 'light' | 'full' | 'realistic';
+export type ResolvedGraphicsMode = '2d' | '3d-light' | '3d-full' | '3d-realistic';
+export type RealisticRenderScale = 0.75 | 1 | 1.25 | 1.5;
+
+export interface RealisticOptions {
+  renderScale: RealisticRenderScale;
+  shadows: boolean;
+  postEffects: boolean;
+  hubDof: boolean;
+  speedStreaks: boolean;
+}
+
+export const DEFAULT_REALISTIC_OPTIONS: RealisticOptions = {
+  renderScale: 1,
+  shadows: true,
+  postEffects: true,
+  hubDof: false,
+  speedStreaks: false,
+};
+
+export type GameGraphicsOverride = 'default' | '3d' | '2d';
+export type GraphicsGameId =
+  | 'turbo-racer'
+  | 'star-defender'
+  | 'word-rain'
+  | 'bubble-pop'
+  | 'beat-typer';
+
+export interface SpeedTestResult {
+  medianFps: number;
+  onePercentLowFps: number;
+  frameCount: number;
+  durationMs: number;
+  recommendedMode: ResolvedGraphicsMode;
+  timestamp: number;
+  skipped?: boolean;
+  heavyMedianFps?: number;
+  heavyOnePercentLowFps?: number;
+  heavyFrameCount?: number;
+  heavyDurationMs?: number;
+}
+
+export interface HardwareReport {
+  webglSupported: boolean;
+  webgl2Supported: boolean;
+  webglVersion: 'WebGL 2.0' | 'WebGL 1.0' | 'Unavailable';
+  renderer: string;
+  vendor: string;
+  rendererKnown: boolean;
+  isSoftwareRenderer: boolean;
+  logicalCores: number;
+  deviceMemoryGb: number | null;
+  screenWidth: number;
+  screenHeight: number;
+  devicePixelRatio: number;
+  pixelCount: number;
+  desktopMode: boolean;
+  desktopHwAccelDisabled: boolean;
+  gpuFeatureStatus: Record<string, string> | null;
+  gpuFeatureSoftwareOnly: boolean;
+  fingerprint: string;
+  prefersReducedMotion: boolean;
+}
+
+export interface PersistedGraphicsState {
+  preference: GraphicsModePreference;
+  detail3D: GraphicsDetailLevel;
+  realisticOptions: RealisticOptions;
+  autoResolvedMode: ResolvedGraphicsMode;
+  autoReason: string;
+  autoChecked: boolean;
+  autoSkipped: boolean;
+  hardwareFingerprint: string;
+  hardwareReport?: HardwareReport | null;
+  speedTestResult: SpeedTestResult | null;
+  firstRunDismissed: boolean;
+  suggest2DWhenSlow: boolean;
+  suggestFullWhenRealisticSlow: boolean;
+  gameOverrides: Partial<Record<GraphicsGameId, GameGraphicsOverride>>;
+  lastUpdatedAt: number;
+}
+
+export const DEFAULT_GRAPHICS_STATE: PersistedGraphicsState = {
+  preference: 'auto',
+  detail3D: 'light',
+  realisticOptions: {...DEFAULT_REALISTIC_OPTIONS},
+  autoResolvedMode: '2d',
+  autoReason: 'Not checked yet',
+  autoChecked: false,
+  autoSkipped: false,
+  hardwareFingerprint: '',
+  hardwareReport: null,
+  speedTestResult: null,
+  firstRunDismissed: false,
+  suggest2DWhenSlow: true,
+  suggestFullWhenRealisticSlow: true,
+  gameOverrides: {},
+  lastUpdatedAt: 0,
+};
+
 export type SceneId =
   | 'hub'
   | 'classroom'
@@ -36,6 +137,7 @@ export interface AppearanceSettings {
   spelling: SpellingVariant;
   backspaceMode: BackspaceMode;
   customPacksUrl: string;
+  calmMode: boolean;
 }
 
 export const DEFAULT_SETTINGS: AppearanceSettings = {
@@ -50,6 +152,7 @@ export const DEFAULT_SETTINGS: AppearanceSettings = {
   spelling: 'british',
   backspaceMode: 'standard',
   customPacksUrl: '',
+  calmMode: false,
 };
 
 export interface UserProfile {

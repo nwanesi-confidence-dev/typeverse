@@ -140,7 +140,7 @@ export const WpmHud: React.FC<WpmHudProps> = ({
   if (compact) {
     return (
       <div
-        className="tv-surface rounded-xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-4"
+        className="tv-surface tv-hud-depth rounded-xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-4"
         aria-label="Live WPM telemetry bar"
       >
         <div className="flex items-center gap-3">
@@ -173,13 +173,13 @@ export const WpmHud: React.FC<WpmHudProps> = ({
 
   return (
     <section
-      className="tv-glass rounded-2xl p-4 sm:p-5 space-y-3"
+      className="tv-glass tv-hud-depth rounded-2xl p-4 sm:p-5 space-y-3"
       aria-label="Live WPM Meter and Session Telemetry"
     >
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-center">
         {/* Speedometer Dial + Digital Readout */}
         <div className="lg:col-span-5 flex items-center gap-4">
-          <div className="relative w-36 h-28 shrink-0">
+          <div className="tv-hud-gauge-well relative w-36 h-28 shrink-0 p-1">
             <svg viewBox="0 0 180 128" className="w-full h-full overflow-visible" aria-hidden="true">
               {bands.map((b, idx) => (
                 <path
@@ -227,6 +227,7 @@ export const WpmHud: React.FC<WpmHudProps> = ({
 
               {/* Spring-smoothed Needle */}
               <g
+                className="tv-hud-needle-shadow"
                 style={{
                   transform: `rotate(${needleAngle}deg)`,
                   transformOrigin: '90px 88px',

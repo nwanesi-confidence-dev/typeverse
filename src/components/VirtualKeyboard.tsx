@@ -178,29 +178,73 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
   showFingerGuide = true,
 }) => {
   const keyElsRef = useRef<Map<string, HTMLDivElement>>(new Map());
+  const releaseTimersRef = useRef<Map<string, number>>(new Map());
   const target = useMemo(() => resolveTargetKeys(nextChar), [nextChar]);
 
-  // Lightweight direct-DOM ripple flash on physical keydown (zero React re-renders!)
+  // Lightweight direct-DOM key press feedback (zero React re-renders!)
   useEffect(() => {
+    const resolveLookup = (e: KeyboardEvent): string => {
+      if (e.code === 'ShiftLeft') return 'ShiftLeft';
+      if (e.code === 'ShiftRight') return 'ShiftRight';
+      if (SHIFT_CHAR_TO_KEY[e.key]) return SHIFT_CHAR_TO_KEY[e.key];
+      return e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    };
+
+    const releaseKey = (lookup: string) => {
+      const timer = releaseTimersRef.current.get(lookup);
+      if (timer !== undefined) {
+        window.clearTimeout(timer);
+        releaseTimersRef.current.delete(lookup);
+      }
+      const el = keyElsRef.current.get(lookup);
+      if (el) el.removeAttribute('data-pressed');
+    };
+
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.repeat) return;
-      let lookup = e.key.length === 1 ? e.key.toLowerCase() : e.key;
-      if (e.code === 'ShiftLeft') lookup = 'ShiftLeft';
-      else if (e.code === 'ShiftRight') lookup = 'ShiftRight';
-      else if (SHIFT_CHAR_TO_KEY[e.key]) lookup = SHIFT_CHAR_TO_KEY[e.key];
-
+      const lookup = resolveLookup(e);
       const el = keyElsRef.current.get(lookup);
       if (!el) return;
-      el.animate(
-        [
-          {transform: 'scale(0.95)', filter: 'brightness(1.45)'},
-          {transform: 'scale(1)', filter: 'brightness(1)'},
-        ],
-        {duration: 140, easing: 'ease-out'},
-      );
+
+      const depthOn = document.documentElement.getAttribute('data-depth') === 'on';
+      if (depthOn) {
+        el.setAttribute('data-pressed', 'true');
+        const prevTimer = releaseTimersRef.current.get(lookup);
+        if (prevTimer !== undefined) window.clearTimeout(prevTimer);
+        releaseTimersRef.current.set(
+          lookup,
+          window.setTimeout(() => releaseKey(lookup), 220),
+        );
+      } else {
+        el.animate(
+          [
+            {transform: 'scale(0.95)', filter: 'brightness(1.45)'},
+            {transform: 'scale(1)', filter: 'brightness(1)'},
+          ],
+          {duration: 140, easing: 'ease-out'},
+        );
+      }
     };
+
+    const onKeyUp = (e: KeyboardEvent) => {
+      releaseKey(resolveLookup(e));
+    };
+
+    const onBlur = () => {
+      releaseTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+      releaseTimersRef.current.clear();
+      keyElsRef.current.forEach((el) => el.removeAttribute('data-pressed'));
+    };
+
     window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onBlur);
+      onBlur();
+    };
   }, []);
 
   const activeFingers = useMemo(() => {
@@ -213,7 +257,7 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
 
   return (
     <section
-      className="tv-surface rounded-2xl p-4 sm:p-5 space-y-4 select-none"
+      className="tv-surface tv-keyboard-tray rounded-2xl p-4 sm:p-5 space-y-4 select-none"
       aria-label="On-screen keyboard and finger guide"
     >
       {/* Top prompt line */}
@@ -246,7 +290,7 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
       </div>
 
       {/* QWERTY Rows */}
-      <div className="mx-auto max-w-[820px] space-y-1.5">
+      <div className="tv-keyboard-board mx-auto max-w-[820px] space-y-1.5">
         {KEYBOARD_ROWS.map((row, rIdx) => (
           <div key={rIdx} className="flex justify-center gap-1.5">
             {row.map((k) => {
@@ -260,17 +304,19 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
                     if (el) keyElsRef.current.set(k.code, el);
                     else keyElsRef.current.delete(k.code);
                   }}
-                  className={`relative flex flex-col items-center justify-center rounded-lg border h-10 sm:h-11 text-xs font-typing font-semibold transition-colors ${
+                  data-target={isTarget ? 'true' : undefined}
+                  className={`tv-keycap-3d relative flex flex-col items-center justify-center rounded-lg border h-10 sm:h-11 text-xs font-typing font-semibold transition-colors ${
                     k.widthClass ?? 'flex-1 max-w-[52px]'
                   }`}
-                  style={{
-                    backgroundColor: isTarget
-                      ? zoneColor
-                      : 'var(--tv-bg)',
-                    color: isTarget ? '#04131B' : 'var(--tv-text)',
-                    borderColor: isTarget ? zoneColor : `${zoneColor}55`,
-                    boxShadow: isTarget ? `0 0 14px ${zoneColor}66` : 'none',
-                  }}
+                  style={
+                    {
+                      backgroundColor: isTarget ? zoneColor : 'var(--tv-bg)',
+                      color: isTarget ? '#04131B' : 'var(--tv-text)',
+                      borderColor: isTarget ? zoneColor : `${zoneColor}55`,
+                      boxShadow: isTarget ? `0 0 14px ${zoneColor}66` : undefined,
+                      '--tv-key-glow': `${zoneColor}77`,
+                    } as React.CSSProperties
+                  }
                 >
                   {k.shiftLabel && (
                     <span className="text-[9px] leading-none opacity-65 mb-0.5">

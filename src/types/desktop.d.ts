@@ -1,5 +1,6 @@
 import type {
   AppearanceSettings,
+  PersistedGraphicsState,
   ProfileProgress,
   UserProfile,
 } from '@/src/types/app';
@@ -11,6 +12,7 @@ export interface DesktopBackupSnapshot {
   profiles: UserProfile[];
   progressByProfile: Record<string, ProfileProgress>;
   settings?: AppearanceSettings;
+  graphicsState?: PersistedGraphicsState;
 }
 
 export interface DesktopPacksStatus {
@@ -44,6 +46,7 @@ export interface DesktopBridge {
   setTitle: (title: string) => void;
   hwAccel: {
     getDisabled: () => Promise<boolean>;
+    getGpuFeatureStatus: () => Promise<Record<string, string>>;
     setDisabled: (disabled: boolean) => Promise<{disabled: boolean; restartRequired: boolean}>;
     relaunch: () => void;
   };

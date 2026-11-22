@@ -1,13 +1,16 @@
 import React, {Suspense, useEffect, useState} from 'react';
 import {AppearanceDrawer} from '@/src/components/AppearanceDrawer';
+import {FirstRunGraphicsDialog} from '@/src/components/FirstRunGraphicsDialog';
 import {Header} from '@/src/components/Header';
 import {InstallHelpModal} from '@/src/components/InstallHelpModal';
 import {ProfileManagerModal} from '@/src/components/ProfileManagerModal';
 import {ShortcutsModal} from '@/src/components/ShortcutsModal';
+import {SpeedTestOverlay} from '@/src/components/SpeedTestOverlay';
 import {ToastHost} from '@/src/components/ToastHost';
 import {TouchDeviceGate} from '@/src/components/TouchDeviceGate';
 import {WpmHud} from '@/src/components/WpmHud';
 import {AppearanceProvider, useAppearance} from '@/src/context/AppearanceContext';
+import {graphicsModeService, useGraphicsMode} from '@/src/graphics/graphicsModeService';
 import {
   getActiveProfileId,
   loadProfileProgress,
@@ -98,6 +101,7 @@ function TypeVerseShell() {
   const [profileProgress, setProfileProgress] = useState<ProfileProgress | null>(null);
 
   const {settings} = useAppearance();
+  const gfx = useGraphicsMode();
   const isOnline = useOnlineStatus();
   const {canNativeInstall, isInstalled, isIOS, install} = usePWAInstall();
   const {needRefresh, reloadApp, dismissUpdate} = useServiceWorkerUpdate();
@@ -144,6 +148,13 @@ function TypeVerseShell() {
       window.location.hash = targetHash;
     }
   }, [activeScene]);
+
+  // Automatic hardware fingerprint change check — runs strictly from the Hub (never mid-game)
+  useEffect(() => {
+    if (activeScene === 'hub' && gfx.initialized) {
+      void graphicsModeService.checkFingerprintChangeOnHub();
+    }
+  }, [activeScene, gfx.initialized]);
 
   useEffect(() => {
     const onHashChange = () => {
@@ -283,61 +294,63 @@ function TypeVerseShell() {
       )}
 
       <div id="main-content" tabIndex={-1} className="flex-1 outline-none">
-        <Suspense fallback={<SceneLoaderFallback />}>
-          {activeScene === 'hub' ? (
-            <HubScene
-              onNavigate={setActiveScene}
-              onOpenAppearance={() => setAppearanceOpen(true)}
-              onOpenProfiles={() => setProfilesOpen(true)}
-              activeProfile={activeProfile}
-              profileProgress={profileProgress}
-              isOnline={isOnline}
-            />
-          ) : activeScene === 'classroom' ? (
-            <ClassroomScene
-              key={activeProfileId}
-              activeProfileId={activeProfileId}
-              onBack={() => setActiveScene('hub')}
-            />
-          ) : activeScene === 'speed-test' ? (
-            <SpeedTestScene
-              key={activeProfileId}
-              onBack={() => setActiveScene('hub')}
-            />
-          ) : activeScene === 'free-practice' ? (
-            <FreePracticeScene
-              key={activeProfileId}
-              activeProfileId={activeProfileId}
-              onBack={() => setActiveScene('hub')}
-            />
-          ) : activeScene === 'daily-challenge' ? (
-            <DailyChallengeScene
-              key={activeProfileId}
-              activeProfileId={activeProfileId}
-              onBack={() => setActiveScene('hub')}
-            />
-          ) : activeScene === 'skill-lab' ? (
-            <SkillLabScene
-              key={activeProfileId}
-              activeProfileId={activeProfileId}
-              onBack={() => setActiveScene('hub')}
-            />
-          ) : activeScene === 'arcade' ? (
-            <ArcadeScene
-              key={activeProfileId}
-              activeProfileId={activeProfileId}
-              onBack={() => setActiveScene('hub')}
-            />
-          ) : activeScene === 'dashboard' ? (
-            <DashboardScene
-              key={activeProfileId}
-              activeProfileId={activeProfileId}
-              onBack={() => setActiveScene('hub')}
-            />
-          ) : (
-            <WordBankExplorer onBack={() => setActiveScene('hub')} />
-          )}
-        </Suspense>
+        <div key={activeScene} className="tv-scene-enter">
+          <Suspense fallback={<SceneLoaderFallback />}>
+            {activeScene === 'hub' ? (
+              <HubScene
+                onNavigate={setActiveScene}
+                onOpenAppearance={() => setAppearanceOpen(true)}
+                onOpenProfiles={() => setProfilesOpen(true)}
+                activeProfile={activeProfile}
+                profileProgress={profileProgress}
+                isOnline={isOnline}
+              />
+            ) : activeScene === 'classroom' ? (
+              <ClassroomScene
+                key={activeProfileId}
+                activeProfileId={activeProfileId}
+                onBack={() => setActiveScene('hub')}
+              />
+            ) : activeScene === 'speed-test' ? (
+              <SpeedTestScene
+                key={activeProfileId}
+                onBack={() => setActiveScene('hub')}
+              />
+            ) : activeScene === 'free-practice' ? (
+              <FreePracticeScene
+                key={activeProfileId}
+                activeProfileId={activeProfileId}
+                onBack={() => setActiveScene('hub')}
+              />
+            ) : activeScene === 'daily-challenge' ? (
+              <DailyChallengeScene
+                key={activeProfileId}
+                activeProfileId={activeProfileId}
+                onBack={() => setActiveScene('hub')}
+              />
+            ) : activeScene === 'skill-lab' ? (
+              <SkillLabScene
+                key={activeProfileId}
+                activeProfileId={activeProfileId}
+                onBack={() => setActiveScene('hub')}
+              />
+            ) : activeScene === 'arcade' ? (
+              <ArcadeScene
+                key={activeProfileId}
+                activeProfileId={activeProfileId}
+                onBack={() => setActiveScene('hub')}
+              />
+            ) : activeScene === 'dashboard' ? (
+              <DashboardScene
+                key={activeProfileId}
+                activeProfileId={activeProfileId}
+                onBack={() => setActiveScene('hub')}
+              />
+            ) : (
+              <WordBankExplorer onBack={() => setActiveScene('hub')} />
+            )}
+          </Suspense>
+        </div>
       </div>
 
       <AppearanceDrawer
@@ -368,6 +381,8 @@ function TypeVerseShell() {
         desktopUpdate={desktopUpdate}
         onDismissDesktopUpdate={() => setDesktopUpdate(null)}
       />
+      <FirstRunGraphicsDialog />
+      <SpeedTestOverlay />
     </div>
   );
 }

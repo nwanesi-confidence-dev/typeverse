@@ -15,8 +15,11 @@ import {renderProfileAvatar} from '@/src/components/ProfileManagerModal';
 import {SceneIllustration} from '@/src/components/SceneArtwork';
 import {useAppearance} from '@/src/context/AppearanceContext';
 import {loadWordBank, type WordBankSummary} from '@/src/data/wordBank';
+import {ThreeCanvasHost} from '@/src/three/ThreeCanvasHost';
 import type {LucideIcon} from 'lucide-react';
 import type {ProfileProgress, SceneId, UserProfile} from '@/src/types/app';
+
+const loadHubOrbitScene = () => import('@/src/three/scenes/hubOrbitScene');
 
 interface HubSceneProps {
   onNavigate: (scene: SceneId) => void;
@@ -122,10 +125,47 @@ export const HubScene: React.FC<HubSceneProps> = ({
     onNavigate(scene);
   };
 
+  const handleCardPointerMove = (e: React.PointerEvent<HTMLButtonElement>) => {
+    const root = document.documentElement;
+    if (
+      root.getAttribute('data-depth') !== 'on' ||
+      root.getAttribute('data-calm') === 'true'
+    ) {
+      return;
+    }
+    const el = e.currentTarget;
+    if (el.dataset.tiltPending === '1') return;
+    const clientX = e.clientX;
+    const clientY = e.clientY;
+    el.dataset.tiltPending = '1';
+    window.requestAnimationFrame(() => {
+      el.dataset.tiltPending = '';
+      const rect = el.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
+      const nx = (clientX - rect.left) / rect.width - 0.5;
+      const ny = (clientY - rect.top) / rect.height - 0.5;
+      const tiltX = (-ny * 6.5).toFixed(2);
+      const tiltY = (nx * 7.5).toFixed(2);
+      el.style.setProperty('--tv-tilt-x', `${tiltX}deg`);
+      el.style.setProperty('--tv-tilt-y', `${tiltY}deg`);
+    });
+  };
+
+  const handleCardPointerLeave = (e: React.PointerEvent<HTMLButtonElement>) => {
+    e.currentTarget.style.setProperty('--tv-tilt-x', '0deg');
+    e.currentTarget.style.setProperty('--tv-tilt-y', '0deg');
+  };
+
   return (
-    <main className={`mx-auto max-w-[1360px] px-4 sm:px-6 ${isCompact ? 'py-5 space-y-6' : 'py-8 space-y-10'}`}>
+    <div className="relative">
+      <ThreeCanvasHost
+        loadScene={loadHubOrbitScene}
+        sceneKey="hub-orbit"
+        className="fixed inset-0 z-0 pointer-events-none opacity-80"
+      />
+      <main className={`relative z-10 mx-auto max-w-[1360px] px-4 sm:px-6 ${isCompact ? 'py-5 space-y-6' : 'py-8 space-y-10'}`}>
       {/* Hero Banner */}
-      <section className="tv-glass relative overflow-hidden rounded-2xl p-7 sm:p-10">
+      <section className="tv-glass tv-dash-card relative overflow-hidden rounded-2xl p-7 sm:p-10">
         <div
           className="pointer-events-none absolute inset-0 opacity-45"
           aria-hidden="true"
@@ -202,7 +242,7 @@ export const HubScene: React.FC<HubSceneProps> = ({
 
           <div className="lg:col-span-5 grid grid-cols-2 gap-3">
             <div
-              className="rounded-xl border p-4 space-y-1"
+              className="tv-dash-card rounded-xl border p-4 space-y-1"
               style={{backgroundColor: 'var(--tv-surface)', borderColor: 'var(--tv-border)'}}
             >
               <div className="text-xs" style={{color: 'var(--tv-text-muted)'}}>
@@ -217,7 +257,7 @@ export const HubScene: React.FC<HubSceneProps> = ({
             </div>
 
             <div
-              className="rounded-xl border p-4 space-y-1"
+              className="tv-dash-card rounded-xl border p-4 space-y-1"
               style={{backgroundColor: 'var(--tv-surface)', borderColor: 'var(--tv-border)'}}
             >
               <div className="text-xs" style={{color: 'var(--tv-text-muted)'}}>
@@ -232,7 +272,7 @@ export const HubScene: React.FC<HubSceneProps> = ({
             </div>
 
             <div
-              className="rounded-xl border p-4 space-y-1"
+              className="tv-dash-card rounded-xl border p-4 space-y-1"
               style={{backgroundColor: 'var(--tv-surface)', borderColor: 'var(--tv-border)'}}
             >
               <div className="text-xs" style={{color: 'var(--tv-text-muted)'}}>
@@ -263,7 +303,7 @@ export const HubScene: React.FC<HubSceneProps> = ({
             </div>
 
             <div
-              className="rounded-xl border p-4 space-y-1"
+              className="tv-dash-card rounded-xl border p-4 space-y-1"
               style={{backgroundColor: 'var(--tv-surface)', borderColor: 'var(--tv-border)'}}
             >
               <div className="text-xs" style={{color: 'var(--tv-text-muted)'}}>
@@ -282,7 +322,7 @@ export const HubScene: React.FC<HubSceneProps> = ({
       </section>
 
       {/* Mode Hub Grid */}
-      <section aria-labelledby="modes-heading" className="space-y-4">
+      <section aria-labelledby="modes-heading" className="tv-hub-perspective space-y-4">
         <div className="flex items-baseline justify-between gap-4">
           <h2 id="modes-heading" className="font-display text-xl font-bold tracking-tight">
             Training & Arcade Modes
@@ -300,7 +340,9 @@ export const HubScene: React.FC<HubSceneProps> = ({
                 key={card.id}
                 type="button"
                 onClick={() => handleOpenScene(card.id)}
-                className="tv-surface tv-card-hover group rounded-2xl p-5 text-left flex flex-col justify-between gap-4"
+                onPointerMove={handleCardPointerMove}
+                onPointerLeave={handleCardPointerLeave}
+                className="tv-surface tv-card-hover tv-tilt-card group rounded-2xl p-5 text-left flex flex-col justify-between gap-4"
               >
                 <div className="space-y-3 w-full">
                   <div className="rounded-xl overflow-hidden border" style={{borderColor: 'var(--tv-border)', backgroundColor: 'var(--tv-bg)'}}>
@@ -332,6 +374,7 @@ export const HubScene: React.FC<HubSceneProps> = ({
           })}
         </div>
       </section>
-    </main>
+      </main>
+    </div>
   );
 };

@@ -271,9 +271,10 @@ export class ArcadeMetricsTracker {
     scoreBonus: number,
     passed: boolean,
     passSummary: string,
+    now = performance.now(),
   ): CompletedSessionStats {
     this.finished = true;
-    const snap = this.getSnapshot(1, null);
+    const snap = this.getSnapshot(1, null, now);
     const totalKeys = this.correctCount + this.errorCount;
     const durationSec = Math.max(1, Math.round(snap.elapsedMs / 1000));
 

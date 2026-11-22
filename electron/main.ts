@@ -578,9 +578,13 @@ function registerIpcHandlers(): void {
     mainWindow.setTitle(title.slice(0, 120));
   });
 
-  // Old-PC safety: Hardware acceleration toggle
+  // Old-PC safety: Hardware acceleration toggle + Chromium GPU feature status
   ipcMain.handle('desktop:get-hw-accel-disabled', () => {
     return isHardwareAccelerationDisabledFlag();
+  });
+
+  ipcMain.handle('desktop:get-gpu-feature-status', () => {
+    return app.getGPUFeatureStatus();
   });
 
   ipcMain.handle('desktop:set-hw-accel-disabled', (_event, disabled: unknown) => {

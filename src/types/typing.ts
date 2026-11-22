@@ -66,6 +66,7 @@ export interface CompletedSessionStats {
   textKind: ContentKind;
   passed?: boolean;
   passRequirementText?: string;
+  playedVisuals?: '2d' | '3d';
   keyStats?: PerKeyStat[];
   bigramStats?: PerKeyStat[];
 }

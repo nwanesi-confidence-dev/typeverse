@@ -15,12 +15,18 @@ import {TypingArena} from '@/src/components/TypingArena';
 import {VirtualKeyboard} from '@/src/components/VirtualKeyboard';
 import {WpmHud} from '@/src/components/WpmHud';
 import {useAppearance} from '@/src/context/AppearanceContext';
+import {useGraphicsMode} from '@/src/graphics/graphicsModeService';
 import {
   CLASSROOM_LESSONS,
   LESSON_STAGES,
   PLACEMENT_TEST_TEXT,
   type ClassroomLesson,
 } from '@/src/data/lessons';
+import {ThreeCanvasHost} from '@/src/three/ThreeCanvasHost';
+import type {ClassroomMap3DState} from '@/src/three/scenes/classroomMap3DScene';
+
+const loadClassroomMap3DScene = () =>
+  import('@/src/three/scenes/classroomMap3DScene');
 import {
   getActiveProfileId,
   loadProfileProgress,
@@ -110,6 +116,40 @@ export const ClassroomScene: React.FC<ClassroomSceneProps> = ({
     if (!progress) return 0;
     return Object.values(progress.lessonStars).reduce((sum, s) => sum + s, 0);
   }, [progress]);
+
+  const gfx = useGraphicsMode();
+  const showIsometricMap =
+    gfx.effectiveMode !== '2d' &&
+    gfx.hardwareReport.webglSupported &&
+    gfx.hardwareReport.webgl2Supported;
+
+  const handleSelectStage = useCallback((stageId: number) => {
+    soundEngine.playUiTap();
+    setSelectedStageId(stageId);
+  }, []);
+
+  const map3DState: ClassroomMap3DState = useMemo(
+    () => ({
+      selectedStageId,
+      onSelectStage: handleSelectStage,
+      stages: LESSON_STAGES.map((stage) => {
+        const list = CLASSROOM_LESSONS.filter((l) => l.stageId === stage.id);
+        const firstIdx = list[0]?.index ?? 0;
+        const starsEarned = list.reduce(
+          (sum, l) => sum + (progress?.lessonStars[l.id] ?? 0),
+          0,
+        );
+        return {
+          stageId: stage.id,
+          title: stage.title,
+          unlocked: unlockedIndex >= firstIdx,
+          starsEarned,
+          starsMax: list.length * 3,
+        };
+      }),
+    }),
+    [selectedStageId, unlockedIndex, progress?.lessonStars, handleSelectStage],
+  );
 
   const startLesson = useCallback((lesson: ClassroomLesson) => {
     soundEngine.playUiTap();
@@ -434,6 +474,31 @@ export const ClassroomScene: React.FC<ClassroomSceneProps> = ({
         </div>
       )}
 
+      {/* 3D Isometric Floating Islands Lesson Path (omitted cleanly in Off mode) */}
+      {showIsometricMap && (
+        <section
+          className="tv-surface tv-dash-card relative h-[210px] sm:h-[235px] w-full rounded-2xl overflow-hidden"
+          aria-label="3D Isometric Lesson Map"
+        >
+          <ThreeCanvasHost
+            loadScene={loadClassroomMap3DScene}
+            sceneKey="classroom-map-3d"
+            sceneState={map3DState}
+            className="w-full h-full"
+          />
+          <div
+            className="pointer-events-none absolute top-3 left-3 z-10 rounded-lg border px-2.5 py-1 text-[11px] font-medium"
+            style={{
+              backgroundColor: 'var(--tv-surface)',
+              borderColor: 'var(--tv-border)',
+              color: 'var(--tv-text-muted)',
+            }}
+          >
+            Floating Island Path · Click an island to jump to Stage {selectedStageId}: {currentStage.title}
+          </div>
+        </section>
+      )}
+
       {/* 8-Stage Selector Strip */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5">
         {LESSON_STAGES.map((stage) => {
@@ -506,8 +571,8 @@ export const ClassroomScene: React.FC<ClassroomSceneProps> = ({
 
             return (
               <div
-                key={lesson.id}
-                className="rounded-xl border p-4 flex flex-col justify-between gap-4"
+                key={`${selectedStageId}-${lesson.id}-${isUnlocked ? 1 : 0}-${stars}`}
+                className="tv-lesson-card-3d rounded-xl border p-4 flex flex-col justify-between gap-4"
                 style={{
                   backgroundColor: 'var(--tv-bg)',
                   borderColor: stars > 0 ? 'var(--tv-success)' : 'var(--tv-border)',

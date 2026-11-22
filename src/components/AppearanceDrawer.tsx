@@ -1,20 +1,39 @@
 import React, {useEffect, useState} from 'react';
 import {
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Copy,
   Download,
+  Eye,
   FolderOpen,
+  Gauge,
+  Monitor,
   RefreshCw,
   RotateCcw,
+  Sparkles,
   Upload,
   Volume2,
   X,
 } from 'lucide-react';
 import {soundEngine} from '@/src/audio/soundEngine';
-import {THEME_OPTIONS, useAppearance} from '@/src/context/AppearanceContext';
+import {DetailPreviewModal} from '@/src/components/DetailPreviewModal';
+import {
+  THEME_OPTIONS,
+  useAppearance,
+} from '@/src/context/AppearanceContext';
+import {computeRenderResolution} from '@/src/graphics/detail';
+import {formatResolvedModeLabel} from '@/src/graphics/decision';
+import {graphicsModeService, useGraphicsMode} from '@/src/graphics/graphicsModeService';
+import {subscribeTexturePrepStatus, type TexturePrepStatus} from '@/src/graphics/texturePrepBus';
 import type {
   BackspaceMode,
   CaretStyle,
   FontChoice,
+  GraphicsDetailLevel,
+  GraphicsModePreference,
   LayoutDensity,
+  RealisticRenderScale,
   SpellingVariant,
   TextSize,
 } from '@/src/types/app';
@@ -52,6 +71,7 @@ export const AppearanceDrawer: React.FC<AppearanceDrawerProps> = ({
 }) => {
   const isDesktop = typeof window !== 'undefined' && Boolean(window.desktop?.isDesktop);
   const {settings, updateSetting, resetSettings, copy} = useAppearance();
+  const gfx = useGraphicsMode();
   const [freshStatus, setFreshStatus] = useState<FreshWordsStatus | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshNote, setRefreshNote] = useState<string | null>(null);
@@ -61,10 +81,20 @@ export const AppearanceDrawer: React.FC<AppearanceDrawerProps> = ({
   const [customUrlDraft, setCustomUrlDraft] = useState(settings.customPacksUrl);
   const [urlError, setUrlError] = useState<string | null>(null);
   const [dataNote, setDataNote] = useState<string | null>(null);
+  const [showGraphicsInfo, setShowGraphicsInfo] = useState(false);
+  const [reportCopied, setReportCopied] = useState(false);
+  const [detailPreviewOpen, setDetailPreviewOpen] = useState(false);
+  const [texPrep, setTexPrep] = useState<TexturePrepStatus>({
+    preparing: false,
+    progressPct: 100,
+    label: 'Ready',
+  });
 
   useEffect(() => {
     setCustomUrlDraft(settings.customPacksUrl);
   }, [settings.customPacksUrl]);
+
+  useEffect(() => subscribeTexturePrepStatus(setTexPrep), []);
 
   useEffect(() => {
     if (!open) return;
@@ -555,6 +585,517 @@ export const AppearanceDrawer: React.FC<AppearanceDrawerProps> = ({
           </label>
         </section>
 
+        {/* Settings -> Graphics */}
+        <section
+          className="rounded-xl border p-4 space-y-3"
+          style={{
+            backgroundColor: 'var(--tv-bg)',
+            borderColor: 'var(--tv-border)',
+          }}
+        >
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4" style={{color: 'var(--tv-accent)'}} aria-hidden="true" />
+              <h3 className="text-sm font-semibold">Graphics</h3>
+            </div>
+            <span
+              className="text-[11px] font-semibold"
+              style={{
+                color: gfx.effectiveMode === '2d' ? 'var(--tv-text-muted)' : 'var(--tv-accent)',
+              }}
+            >
+              Active: {formatResolvedModeLabel(gfx.effectiveMode)}
+            </span>
+          </div>
+
+          {/* Segmented Control: Auto | 3D | 2D Classic */}
+          <div
+            className="grid grid-cols-3 gap-1.5 rounded-xl p-1 border"
+            style={{backgroundColor: 'var(--tv-surface)', borderColor: 'var(--tv-border)'}}
+            role="group"
+            aria-label="Graphics mode"
+          >
+            {(
+              [
+                {id: 'auto', label: 'Auto'},
+                {id: '3d', label: '3D'},
+                {id: '2d', label: '2D Classic'},
+              ] as Array<{id: GraphicsModePreference; label: string}>
+            ).map((opt) => {
+              const active = gfx.preference === opt.id;
+              const disabled3D =
+                opt.id === '3d' &&
+                (!gfx.hardwareReport.webglSupported || !gfx.hardwareReport.webgl2Supported);
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  disabled={disabled3D}
+                  onClick={() => {
+                    soundEngine.playUiTap();
+                    void graphicsModeService.setPreference(opt.id);
+                  }}
+                  className="rounded-lg px-2 py-1.5 text-xs font-medium whitespace-nowrap transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  style={{
+                    backgroundColor: active ? 'var(--tv-accent)' : 'transparent',
+                    color: active ? 'var(--tv-accent-fg)' : 'var(--tv-text-muted)',
+                  }}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Unavailable WebGL explanation OR Auto explanation */}
+          {!gfx.hardwareReport.webglSupported || !gfx.hardwareReport.webgl2Supported ? (
+            <p className="text-xs leading-relaxed" style={{color: 'var(--tv-warning)'}}>
+              3D isn&apos;t available on this computer (WebGL 2 unsupported). Using 2D Classic.
+            </p>
+          ) : (
+            <div
+              className="rounded-lg border px-3 py-2 text-xs space-y-1"
+              style={{backgroundColor: 'var(--tv-surface)', borderColor: 'var(--tv-border)'}}
+            >
+              <div className="font-medium" style={{color: 'var(--tv-text)'}}>
+                {gfx.preference === 'auto'
+                  ? gfx.autoSkipped || !gfx.autoChecked
+                    ? `Auto chose: ${formatResolvedModeLabel(gfx.autoResolvedMode)} — Not checked yet`
+                    : gfx.persistedState.autoReason
+                  : gfx.reasonText}
+              </div>
+              {gfx.speedTestResult && !gfx.speedTestResult.skipped && (
+                <div className="font-typing text-[11px] tabular-nums" style={{color: 'var(--tv-text-muted)'}}>
+                  Last speed test: {gfx.speedTestResult.medianFps} FPS median · {gfx.speedTestResult.onePercentLowFps} FPS 1% low
+                  {typeof gfx.speedTestResult.heavyMedianFps === 'number' &&
+                    ` (Realistic test: ${gfx.speedTestResult.heavyMedianFps} FPS med)`}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 3D Detail (Light | Full | Realistic) visible when mode is 3D or Auto resolved to 3D */}
+          {(gfx.preference === '3d' ||
+            (gfx.preference === 'auto' && gfx.autoResolvedMode !== '2d')) &&
+            gfx.hardwareReport.webglSupported &&
+            gfx.hardwareReport.webgl2Supported && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2 text-xs">
+                  <span className="font-semibold">3D detail</span>
+                  <span style={{color: 'var(--tv-text-muted)'}}>
+                    {gfx.detail3D === 'realistic'
+                      ? 'Needs a good graphics card'
+                      : gfx.detail3D === 'full'
+                        ? 'HiDPI, fog & glow'
+                        : '1x scale, simpler lighting'}
+                  </span>
+                </div>
+                <div
+                  className="grid grid-cols-3 gap-1.5 rounded-xl p-1 border"
+                  style={{backgroundColor: 'var(--tv-surface)', borderColor: 'var(--tv-border)'}}
+                  role="group"
+                  aria-label="3D detail level"
+                >
+                  {(
+                    [
+                      {id: 'light', label: 'Light'},
+                      {id: 'full', label: 'Full'},
+                      {id: 'realistic', label: 'Realistic'},
+                    ] as Array<{id: GraphicsDetailLevel; label: string}>
+                  ).map((d) => {
+                    const active = gfx.detail3D === d.id;
+                    return (
+                      <button
+                        key={d.id}
+                        type="button"
+                        onClick={() => {
+                          soundEngine.playUiTap();
+                          void graphicsModeService.setDetail3D(d.id);
+                        }}
+                        className="rounded-lg px-2 py-1.5 text-xs font-medium whitespace-nowrap transition-colors"
+                        style={{
+                          backgroundColor: active ? 'var(--tv-accent)' : 'transparent',
+                          color: active ? 'var(--tv-accent-fg)' : 'var(--tv-text-muted)',
+                        }}
+                      >
+                        {d.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {texPrep.preparing && (
+                  <div className="text-[11px] font-medium" style={{color: 'var(--tv-accent)'}}>
+                    {texPrep.label} ({texPrep.progressPct}%)
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundEngine.playUiTap();
+                    setDetailPreviewOpen(true);
+                  }}
+                  className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-opacity hover:opacity-90"
+                  style={{
+                    borderColor: 'var(--tv-border)',
+                    backgroundColor: 'var(--tv-surface)',
+                    color: 'var(--tv-text)',
+                  }}
+                >
+                  <Eye className="w-3.5 h-3.5 shrink-0" style={{color: 'var(--tv-accent)'}} aria-hidden="true" />
+                  <span>Detail preview</span>
+                </button>
+
+                {/* Manual Realistic Options (visible only when Realistic is selected) */}
+                {gfx.detail3D === 'realistic' && (
+                  <div
+                    className="rounded-lg border p-3 space-y-2.5"
+                    style={{backgroundColor: 'var(--tv-surface)', borderColor: 'var(--tv-border)'}}
+                  >
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="font-semibold">Render scale</span>
+                      <span className="font-typing tabular-nums" style={{color: 'var(--tv-text-muted)'}}>
+                        {Math.round(gfx.realisticOptions.renderScale * 100)}% (cap ~8M px)
+                      </span>
+                    </div>
+                    <div
+                      className="grid grid-cols-4 gap-1 rounded-lg p-0.5 border"
+                      style={{backgroundColor: 'var(--tv-bg)', borderColor: 'var(--tv-border)'}}
+                      role="group"
+                      aria-label="Realistic render scale"
+                    >
+                      {([0.75, 1, 1.25, 1.5] as RealisticRenderScale[]).map((sc) => {
+                        const active = gfx.realisticOptions.renderScale === sc;
+                        return (
+                          <button
+                            key={sc}
+                            type="button"
+                            onClick={() => {
+                              soundEngine.playUiTap();
+                              void graphicsModeService.setRealisticOption('renderScale', sc);
+                            }}
+                            className="rounded-md py-1 text-[11px] font-semibold transition-colors"
+                            style={{
+                              backgroundColor: active ? 'var(--tv-accent)' : 'transparent',
+                              color: active ? 'var(--tv-accent-fg)' : 'var(--tv-text-muted)',
+                            }}
+                          >
+                            {Math.round(sc * 100)}%
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <label className="flex items-center justify-between gap-2 text-xs cursor-pointer rounded-md border px-2.5 py-1.5" style={{borderColor: 'var(--tv-border)', backgroundColor: 'var(--tv-bg)'}}>
+                        <span>Shadows</span>
+                        <input
+                          type="checkbox"
+                          checked={gfx.realisticOptions.shadows}
+                          onChange={(e) => {
+                            soundEngine.playUiTap();
+                            void graphicsModeService.setRealisticOption('shadows', e.target.checked);
+                          }}
+                          className="h-3.5 w-3.5 accent-current"
+                          style={{color: 'var(--tv-accent)'}}
+                        />
+                      </label>
+                      <label className="flex items-center justify-between gap-2 text-xs cursor-pointer rounded-md border px-2.5 py-1.5" style={{borderColor: 'var(--tv-border)', backgroundColor: 'var(--tv-bg)'}}>
+                        <span>Post effects</span>
+                        <input
+                          type="checkbox"
+                          checked={gfx.realisticOptions.postEffects}
+                          onChange={(e) => {
+                            soundEngine.playUiTap();
+                            void graphicsModeService.setRealisticOption('postEffects', e.target.checked);
+                          }}
+                          className="h-3.5 w-3.5 accent-current"
+                          style={{color: 'var(--tv-accent)'}}
+                        />
+                      </label>
+                    </div>
+
+                    <p className="text-[10px] leading-snug" style={{color: 'var(--tv-text-muted)'}}>
+                      Changes that need a new renderer (antialiasing/samples) apply at the next round.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+          {/* Hardware Summary */}
+          <div
+            className="rounded-lg border px-3 py-2 text-[11px] space-y-1"
+            style={{
+              backgroundColor: 'var(--tv-surface)',
+              borderColor: 'var(--tv-border)',
+              color: 'var(--tv-text-muted)',
+            }}
+          >
+            <div className="flex items-center gap-1.5 font-medium" style={{color: 'var(--tv-text)'}}>
+              <Monitor className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+              <span className="truncate" title={gfx.hardwareReport.renderer}>
+                GPU: {gfx.hardwareReport.renderer}
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 tabular-nums">
+              <span>CPU: {gfx.hardwareReport.logicalCores} cores</span>
+              {gfx.hardwareReport.deviceMemoryGb !== null && (
+                <span>RAM: {gfx.hardwareReport.deviceMemoryGb} GB</span>
+              )}
+              <span>
+                HW Accel:{' '}
+                {gfx.hardwareReport.desktopHwAccelDisabled
+                  ? 'Off (desktop setting)'
+                  : gfx.hardwareReport.isSoftwareRenderer || gfx.hardwareReport.gpuFeatureSoftwareOnly
+                    ? 'Software rasteriser'
+                    : 'Active'}
+              </span>
+            </div>
+          </div>
+
+          {/* Re-check my computer + Run speed test buttons */}
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              disabled={gfx.speedTestStatus.running}
+              onClick={() => {
+                soundEngine.playUiTap();
+                void graphicsModeService.runHardwareCheckAndSpeedTest();
+              }}
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg border px-2.5 py-2 text-xs font-medium transition-opacity disabled:opacity-50"
+              style={{
+                borderColor: 'var(--tv-border)',
+                backgroundColor: 'var(--tv-surface)',
+                color: 'var(--tv-text)',
+              }}
+            >
+              <RefreshCw
+                className={`w-3.5 h-3.5 shrink-0 ${gfx.speedTestStatus.running ? 'animate-spin' : ''}`}
+                aria-hidden="true"
+              />
+              <span>Re-check my computer</span>
+            </button>
+            <button
+              type="button"
+              disabled={
+                gfx.speedTestStatus.running ||
+                !gfx.hardwareReport.webglSupported ||
+                !gfx.hardwareReport.webgl2Supported
+              }
+              onClick={() => {
+                soundEngine.playUiTap();
+                void graphicsModeService.runHardwareCheckAndSpeedTest();
+              }}
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg border px-2.5 py-2 text-xs font-medium transition-opacity disabled:opacity-50"
+              style={{
+                borderColor: 'var(--tv-accent)',
+                backgroundColor: 'var(--tv-surface)',
+                color: 'var(--tv-accent)',
+              }}
+            >
+              <Gauge className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+              <span>
+                {gfx.speedTestStatus.running
+                  ? `Testing (${gfx.speedTestStatus.progressPct}%)`
+                  : 'Run speed test'}
+              </span>
+            </button>
+          </div>
+
+          {/* Suggest 2D & Calm mode toggles */}
+          <div className="space-y-2 pt-1 border-t" style={{borderColor: 'var(--tv-border)'}}>
+            <label className="flex items-start justify-between gap-3 cursor-pointer">
+              <span className="text-xs leading-snug">
+                Suggest 2D if 3D runs slowly
+              </span>
+              <input
+                type="checkbox"
+                checked={gfx.suggest2DWhenSlow}
+                onChange={(e) => {
+                  soundEngine.playUiTap();
+                  void graphicsModeService.setSuggest2DWhenSlow(e.target.checked);
+                }}
+                className="h-4 w-4 shrink-0 mt-0.5 accent-current"
+                style={{color: 'var(--tv-accent)'}}
+              />
+            </label>
+            <label className="flex items-start justify-between gap-3 cursor-pointer">
+              <span className="text-xs leading-snug">
+                Calm mode <span style={{color: 'var(--tv-text-muted)'}}>(disables card tilt &amp; camera drift)</span>
+              </span>
+              <input
+                type="checkbox"
+                checked={settings.calmMode}
+                onChange={(e) => {
+                  soundEngine.playUiTap();
+                  updateSetting('calmMode', e.target.checked);
+                }}
+                className="h-4 w-4 shrink-0 mt-0.5 accent-current"
+                style={{color: 'var(--tv-accent)'}}
+              />
+            </label>
+          </div>
+        </section>
+
+        {/* Settings -> Advanced -> Show graphics info */}
+        <section
+          className="rounded-xl border p-4 space-y-3"
+          style={{
+            backgroundColor: 'var(--tv-bg)',
+            borderColor: 'var(--tv-border)',
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => {
+              soundEngine.playUiTap();
+              setShowGraphicsInfo((prev) => !prev);
+            }}
+            aria-expanded={showGraphicsInfo}
+            className="w-full flex items-center justify-between text-left"
+          >
+            <div>
+              <h3 className="text-sm font-semibold">Advanced: Show graphics info</h3>
+              <p className="text-[11px]" style={{color: 'var(--tv-text-muted)'}}>
+                Diagnostics report, live FPS, draw calls &amp; WebGL feature status
+              </p>
+            </div>
+            {showGraphicsInfo ? (
+              <ChevronUp className="w-4 h-4 shrink-0" style={{color: 'var(--tv-text-muted)'}} aria-hidden="true" />
+            ) : (
+              <ChevronDown className="w-4 h-4 shrink-0" style={{color: 'var(--tv-text-muted)'}} aria-hidden="true" />
+            )}
+          </button>
+
+          {showGraphicsInfo && (
+            <div className="space-y-2.5 pt-2 border-t text-xs" style={{borderColor: 'var(--tv-border)'}}>
+              <dl className="grid grid-cols-1 gap-1.5 font-typing text-[11px]">
+                <div className="flex justify-between gap-2">
+                  <dt style={{color: 'var(--tv-text-muted)'}}>Renderer</dt>
+                  <dd className="text-right break-all">{gfx.hardwareReport.renderer}</dd>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <dt style={{color: 'var(--tv-text-muted)'}}>Vendor</dt>
+                  <dd className="text-right break-all">{gfx.hardwareReport.vendor}</dd>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <dt style={{color: 'var(--tv-text-muted)'}}>WebGL</dt>
+                  <dd>{gfx.hardwareReport.webglVersion}</dd>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <dt style={{color: 'var(--tv-text-muted)'}}>Mode &amp; Reason</dt>
+                  <dd className="text-right">{formatResolvedModeLabel(gfx.effectiveMode)}</dd>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <dt style={{color: 'var(--tv-text-muted)'}}>Speed Test</dt>
+                  <dd className="text-right tabular-nums">
+                    {gfx.speedTestResult
+                      ? gfx.speedTestResult.skipped
+                        ? 'Skipped'
+                        : `${gfx.speedTestResult.medianFps} FPS med / ${gfx.speedTestResult.onePercentLowFps} 1% low`
+                      : 'Not run'}
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <dt style={{color: 'var(--tv-text-muted)'}}>Live FPS / Draw Calls</dt>
+                  <dd className="tabular-nums">
+                    {gfx.liveFps !== null ? `${gfx.liveFps} FPS` : 'Idle'} ·{' '}
+                    {gfx.liveDrawCalls !== null ? `${gfx.liveDrawCalls} calls` : '0 calls'}
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <dt style={{color: 'var(--tv-text-muted)'}}>Triangles / Texture Mem</dt>
+                  <dd className="tabular-nums">
+                    {gfx.liveTriangles !== null ? gfx.liveTriangles.toLocaleString() : '0'} tris ·{' '}
+                    {gfx.liveTextureMemoryMb !== null ? `${gfx.liveTextureMemoryMb.toFixed(1)} MB` : '0.0 MB'}
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <dt style={{color: 'var(--tv-text-muted)'}}>Render Resolution</dt>
+                  <dd className="tabular-nums text-right">
+                    {(() => {
+                      const activeRes =
+                        gfx.liveRenderResolution ??
+                        (() => {
+                          const est = computeRenderResolution({
+                            cssWidth: gfx.hardwareReport.screenWidth,
+                            cssHeight: gfx.hardwareReport.screenHeight,
+                            devicePixelRatio: gfx.hardwareReport.devicePixelRatio,
+                            resolvedMode: gfx.effectiveMode,
+                            realisticOptions: gfx.realisticOptions,
+                          });
+                          return {
+                            width: est.renderWidth,
+                            height: est.renderHeight,
+                            totalPixels: est.totalPixels,
+                          };
+                        })();
+                      return `${activeRes.width}x${activeRes.height} (${activeRes.totalPixels.toLocaleString()} px)`;
+                    })()}
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <dt style={{color: 'var(--tv-text-muted)'}}>Shadows / Post Effects</dt>
+                  <dd className="tabular-nums">
+                    {gfx.shadowsActive ? 'On' : 'Off'} / {gfx.postEffectsActive ? 'On' : 'Off'}
+                  </dd>
+                </div>
+              </dl>
+
+              <div className="text-[11px]" style={{color: 'var(--tv-text-muted)'}}>
+                {gfx.reasonText}
+              </div>
+
+              {gfx.hardwareReport.gpuFeatureStatus && (
+                <pre
+                  className="rounded-lg border p-2 text-[10px] font-typing overflow-x-auto max-h-28"
+                  style={{
+                    backgroundColor: 'var(--tv-surface)',
+                    borderColor: 'var(--tv-border)',
+                    color: 'var(--tv-text-muted)',
+                  }}
+                >
+                  {Object.entries(gfx.hardwareReport.gpuFeatureStatus)
+                    .map(([k, v]) => `${k}: ${v}`)
+                    .join('\n')}
+                </pre>
+              )}
+
+              <button
+                type="button"
+                onClick={() => {
+                  soundEngine.playUiTap();
+                  const text = graphicsModeService.buildSupportReport();
+                  void navigator.clipboard?.writeText(text).then(() => {
+                    setReportCopied(true);
+                    window.setTimeout(() => setReportCopied(false), 1800);
+                  });
+                }}
+                className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold"
+                style={{
+                  borderColor: 'var(--tv-accent)',
+                  backgroundColor: 'var(--tv-surface)',
+                  color: 'var(--tv-accent)',
+                }}
+              >
+                {reportCopied ? (
+                  <>
+                    <Check className="w-3.5 h-3.5" aria-hidden="true" />
+                    <span>Copied report to clipboard</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5" aria-hidden="true" />
+                    <span>Copy report</span>
+                  </>
+                )}
+              </button>
+            </div>
+          )}
+        </section>
+
         {/* Static Fresh Word Packs */}
         <section
           className="rounded-xl border p-4 space-y-3"
@@ -754,6 +1295,7 @@ export const AppearanceDrawer: React.FC<AppearanceDrawerProps> = ({
           </button>
         </div>
       </aside>
+      <DetailPreviewModal open={detailPreviewOpen} onClose={() => setDetailPreviewOpen(false)} />
     </div>
   );
 };

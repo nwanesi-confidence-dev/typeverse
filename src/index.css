@@ -262,3 +262,197 @@
   }
 }
 
+/* ============================================================================
+   PHASE 10 LAYER 1: CSS 3D DEPTH UI (Zero runtime library, Off = exact 2D)
+   ============================================================================ */
+
+/* WebGL Safety: avoid expensive backdrop-filter blur compositing when an active WebGL canvas is mounted */
+[data-webgl-active="true"] .tv-glass,
+[data-webgl-active="true"] [class*="backdrop-blur"] {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+[data-webgl-active="true"] .tv-glass {
+  background-color: var(--tv-surface);
+}
+
+/* Scene Transition: GPU-only transform + opacity 3D depth entrance */
+@keyframes tv-scene-flip-in {
+  from {
+    opacity: 0;
+    transform: perspective(1200px) translate3d(0, 12px, -24px) rotateX(2.5deg) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: perspective(1200px) translate3d(0, 0, 0) rotateX(0deg) scale(1);
+  }
+}
+
+[data-depth="on"][data-calm="false"] .tv-scene-enter {
+  animation: tv-scene-flip-in 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  transform-origin: center top;
+  will-change: transform, opacity;
+}
+
+/* Hub 3D Perspective Container & Pointer-Tilt Panels */
+[data-depth="on"] .tv-hub-perspective {
+  perspective: 1100px;
+}
+
+[data-depth="on"] .tv-tilt-card {
+  transform-style: preserve-3d;
+  transition: transform 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 180ms ease,
+    box-shadow 200ms ease;
+  box-shadow:
+    0 10px 24px -12px rgba(2, 6, 23, 0.55),
+    0 2px 0 0 rgba(255, 255, 255, 0.04) inset;
+}
+
+[data-depth="on"][data-calm="false"] .tv-tilt-card:hover,
+[data-depth="on"][data-calm="false"] .tv-tilt-card:focus-visible {
+  transform: perspective(1000px)
+    rotateX(var(--tv-tilt-x, 0deg))
+    rotateY(var(--tv-tilt-y, 0deg))
+    translate3d(0, -4px, 12px);
+  border-color: var(--tv-accent);
+  box-shadow:
+    0 20px 36px -14px rgba(2, 6, 23, 0.72),
+    0 0 0 1px var(--tv-glow),
+    0 2px 0 0 rgba(255, 255, 255, 0.08) inset;
+}
+
+[data-depth="on"][data-calm="true"] .tv-tilt-card:hover,
+[data-depth="on"][data-calm="true"] .tv-tilt-card:focus-visible {
+  transform: translateY(-2px);
+  border-color: var(--tv-accent);
+}
+
+/* Virtual Keyboard 3D Keycaps */
+[data-depth="on"] .tv-keyboard-tray {
+  perspective: 950px;
+  box-shadow:
+    0 14px 32px -16px rgba(2, 6, 23, 0.65),
+    0 1px 0 0 rgba(255, 255, 255, 0.06) inset;
+}
+
+[data-depth="on"][data-calm="false"] .tv-keyboard-board {
+  transform: rotateX(7deg);
+  transform-style: preserve-3d;
+}
+
+[data-depth="on"] .tv-keycap-3d {
+  transform-style: preserve-3d;
+  border-bottom-width: 3px;
+  box-shadow:
+    0 4px 0 0 rgba(2, 6, 23, 0.68),
+    0 6px 10px -4px rgba(2, 6, 23, 0.5),
+    0 1px 0 0 rgba(255, 255, 255, 0.1) inset;
+  transition:
+    transform 110ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 110ms cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 90ms ease,
+    border-color 90ms ease;
+}
+
+[data-depth="on"] .tv-keycap-3d[data-target="true"] {
+  transform: translate3d(0, -3px, 10px);
+  box-shadow:
+    0 6px 0 0 rgba(2, 6, 23, 0.75),
+    0 0 18px var(--tv-key-glow, var(--tv-glow)),
+    0 1px 0 0 rgba(255, 255, 255, 0.28) inset;
+}
+
+[data-depth="on"] .tv-keycap-3d[data-pressed="true"] {
+  transform: translate3d(0, 3px, -4px) scale(0.97);
+  border-bottom-width: 1px;
+  box-shadow:
+    0 1px 0 0 rgba(2, 6, 23, 0.75),
+    0 1px 3px rgba(2, 6, 23, 0.45),
+    0 0 10px var(--tv-key-glow, var(--tv-glow));
+}
+
+/* WPM HUD Depth Styling (Flat & crisp DOM on top, layered bezel + needle shadow) */
+[data-depth="on"] .tv-hud-depth {
+  box-shadow:
+    0 14px 30px -16px rgba(2, 6, 23, 0.68),
+    0 1px 0 0 rgba(255, 255, 255, 0.08) inset,
+    0 -2px 0 0 rgba(2, 6, 23, 0.35) inset;
+}
+
+[data-depth="on"] .tv-hud-gauge-well {
+  background: radial-gradient(
+    circle at 50% 62%,
+    rgba(255, 255, 255, 0.04) 0%,
+    rgba(2, 6, 23, 0.22) 72%,
+    rgba(2, 6, 23, 0.45) 100%
+  );
+  border: 1px solid var(--tv-border);
+  border-radius: 0.9rem;
+  box-shadow:
+    0 3px 10px rgba(2, 6, 23, 0.35) inset,
+    0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+[data-depth="on"] .tv-hud-needle-shadow {
+  filter: drop-shadow(0 3px 3px rgba(2, 6, 23, 0.65));
+}
+
+/* Dashboard Tilted Glass Cards & 3D Bars */
+[data-depth="on"] .tv-dash-card {
+  box-shadow:
+    0 12px 26px -14px rgba(2, 6, 23, 0.6),
+    0 1px 0 0 rgba(255, 255, 255, 0.07) inset;
+  transition: transform 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 180ms ease;
+}
+
+[data-depth="on"][data-calm="false"] .tv-dash-card:hover {
+  transform: perspective(900px) rotateX(1.5deg) translateY(-2px);
+  border-color: var(--tv-accent);
+}
+
+[data-depth="on"] .tv-bar-3d-track {
+  box-shadow: 0 2px 5px rgba(2, 6, 23, 0.45) inset;
+  border: 1px solid var(--tv-border);
+}
+
+[data-depth="on"] .tv-bar-3d-fill {
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.35) inset,
+    0 -2px 0 rgba(2, 6, 23, 0.3) inset,
+    0 0 10px var(--tv-glow);
+}
+
+/* Classroom Lesson Card 3D State Flip & Elevation */
+@keyframes tv-card-flip-state {
+  0% {
+    opacity: 0.35;
+    transform: perspective(900px) rotateY(-18deg) translateZ(-12px);
+  }
+  100% {
+    opacity: 1;
+    transform: perspective(900px) rotateY(0deg) translateZ(0px);
+  }
+}
+
+[data-depth="on"][data-calm="false"] .tv-lesson-card-3d {
+  animation: tv-card-flip-state 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  transform-style: preserve-3d;
+  transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 180ms ease,
+    box-shadow 180ms ease;
+}
+
+[data-depth="on"][data-calm="false"] .tv-lesson-card-3d:hover {
+  transform: perspective(900px) translate3d(0, -3px, 10px) rotateX(1.5deg);
+  box-shadow: 0 16px 28px -14px rgba(2, 6, 23, 0.72);
+}
+
+[data-depth="on"][data-calm="true"] .tv-lesson-card-3d {
+  transition: border-color 180ms ease;
+}
+
+
+

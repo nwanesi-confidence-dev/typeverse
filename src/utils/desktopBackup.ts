@@ -3,24 +3,32 @@ import {
   getActiveProfileId,
   idbGetAll,
   idbSet,
+  loadGraphicsState,
   loadProfileProgress,
   loadProfiles,
   loadSettings,
+  saveGraphicsState,
   saveProfile,
   saveProfileProgress,
   saveSettings,
   setActiveProfileId,
 } from '@/src/db/storage';
-import type {AppearanceSettings, ProfileProgress, UserProfile} from '@/src/types/app';
+import type {
+  AppearanceSettings,
+  PersistedGraphicsState,
+  ProfileProgress,
+  UserProfile,
+} from '@/src/types/app';
 import type {DesktopBackupSnapshot} from '@/src/types/desktop';
 
 const PERIODIC_BACKUP_MS = 3 * 60 * 1000; // 3 minutes
 
 export async function buildDesktopBackupSnapshot(): Promise<DesktopBackupSnapshot> {
-  const [profiles, activeProfileId, settings] = await Promise.all([
+  const [profiles, activeProfileId, settings, graphicsState] = await Promise.all([
     loadProfiles(),
     getActiveProfileId(),
     loadSettings(),
+    loadGraphicsState(),
   ]);
 
   const progressEntries = await Promise.all(
@@ -39,6 +47,7 @@ export async function buildDesktopBackupSnapshot(): Promise<DesktopBackupSnapsho
     profiles,
     progressByProfile,
     settings,
+    graphicsState,
   };
 }
 
@@ -71,6 +80,23 @@ export async function applyBackupSnapshotToStorage(
   if (snapshot.settings && typeof snapshot.settings === 'object') {
     const current = await loadSettings();
     await saveSettings({...current, ...(snapshot.settings as Partial<AppearanceSettings>)});
+  }
+
+  if (snapshot.graphicsState && typeof snapshot.graphicsState === 'object') {
+    const currentGfx = await loadGraphicsState();
+    const restoredGfx = snapshot.graphicsState as Partial<PersistedGraphicsState>;
+    await saveGraphicsState({
+      ...currentGfx,
+      ...restoredGfx,
+      realisticOptions: {
+        ...currentGfx.realisticOptions,
+        ...(restoredGfx.realisticOptions ?? {}),
+      },
+      gameOverrides: {
+        ...currentGfx.gameOverrides,
+        ...(restoredGfx.gameOverrides ?? {}),
+      },
+    });
   }
 
   await idbSet('meta', 'restoredBackupAt', Date.now());

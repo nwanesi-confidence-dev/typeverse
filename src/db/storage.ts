@@ -1,7 +1,9 @@
 import {
+  DEFAULT_GRAPHICS_STATE,
   DEFAULT_SETTINGS,
   type AppearanceSettings,
   type FreshPack,
+  type PersistedGraphicsState,
   type ProfileProgress,
   type UserProfile,
 } from '@/src/types/app';
@@ -211,6 +213,26 @@ export async function loadSettings(): Promise<AppearanceSettings> {
 
 export async function saveSettings(settings: AppearanceSettings): Promise<void> {
   await idbSet('settings', 'appearance', settings);
+}
+
+export async function loadGraphicsState(): Promise<PersistedGraphicsState> {
+  const saved = await idbGet<Partial<PersistedGraphicsState>>('settings', 'graphicsMode');
+  return {
+    ...DEFAULT_GRAPHICS_STATE,
+    ...(saved ?? {}),
+    realisticOptions: {
+      ...DEFAULT_GRAPHICS_STATE.realisticOptions,
+      ...(saved?.realisticOptions ?? {}),
+    },
+    gameOverrides: {
+      ...DEFAULT_GRAPHICS_STATE.gameOverrides,
+      ...(saved?.gameOverrides ?? {}),
+    },
+  };
+}
+
+export async function saveGraphicsState(state: PersistedGraphicsState): Promise<void> {
+  await idbSet('settings', 'graphicsMode', state);
 }
 
 const DEFAULT_PROFILE_ID = 'default-typist';

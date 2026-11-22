@@ -2,6 +2,10 @@ import React, {createContext, useCallback, useContext, useEffect, useMemo, useSt
 import {soundEngine} from '@/src/audio/soundEngine';
 import {loadSettings, saveSettings} from '@/src/db/storage';
 import {
+  graphicsModeService,
+  useGraphicsMode,
+} from '@/src/graphics/graphicsModeService';
+import {
   DEFAULT_SETTINGS,
   type AppearanceSettings,
   type FontChoice,
@@ -86,14 +90,23 @@ interface AppearanceContextValue {
 
 const AppearanceContext = createContext<AppearanceContextValue | null>(null);
 
-function applyDocumentAppearance(settings: AppearanceSettings): void {
+function applyDocumentAppearance(
+  settings: AppearanceSettings,
+  depthActive: boolean,
+  prefersReducedMotion: boolean,
+  effectiveMode: string,
+): void {
   if (typeof document === 'undefined') return;
   const root = document.documentElement;
   const meta = THEME_OPTIONS.find((t) => t.id === settings.theme) ?? THEME_OPTIONS[0];
+  const isCalm = settings.calmMode || settings.reducedMotion || prefersReducedMotion;
 
   root.setAttribute('data-theme', settings.theme);
   root.setAttribute('data-layout', settings.layout);
   root.setAttribute('data-reduced-motion', String(settings.reducedMotion));
+  root.setAttribute('data-depth', depthActive ? 'on' : 'off');
+  root.setAttribute('data-calm', String(isCalm));
+  root.setAttribute('data-graphics-mode', effectiveMode);
   root.style.setProperty('--tv-font-mono', FONT_STACK_MAP[settings.fontChoice]);
 
   if (meta.isDark) {
@@ -111,13 +124,13 @@ function applyDocumentAppearance(settings: AppearanceSettings): void {
 export const AppearanceProvider: React.FC<{children: React.ReactNode}> = ({children}) => {
   const [settings, setSettings] = useState<AppearanceSettings>(DEFAULT_SETTINGS);
   const [isLoaded, setIsLoaded] = useState(false);
+  const gfx = useGraphicsMode();
 
   useEffect(() => {
     let active = true;
-    void loadSettings().then((loaded) => {
+    void Promise.all([loadSettings(), graphicsModeService.initialize()]).then(([loaded]) => {
       if (!active) return;
       setSettings(loaded);
-      applyDocumentAppearance(loaded);
       soundEngine.setVolume(loaded.soundVolume);
       setIsLoaded(true);
     });
@@ -127,9 +140,14 @@ export const AppearanceProvider: React.FC<{children: React.ReactNode}> = ({child
   }, []);
 
   useEffect(() => {
-    applyDocumentAppearance(settings);
+    applyDocumentAppearance(
+      settings,
+      gfx.spec.enableDepthUi,
+      gfx.hardwareReport.prefersReducedMotion,
+      gfx.effectiveMode,
+    );
     soundEngine.setVolume(settings.soundVolume);
-  }, [settings]);
+  }, [settings, gfx.spec.enableDepthUi, gfx.hardwareReport.prefersReducedMotion, gfx.effectiveMode]);
 
   const updateSetting = useCallback(
     <K extends keyof AppearanceSettings>(key: K, value: AppearanceSettings[K]) => {
@@ -153,7 +171,13 @@ export const AppearanceProvider: React.FC<{children: React.ReactNode}> = ({child
   );
 
   const value = useMemo(
-    () => ({settings, isLoaded, updateSetting, resetSettings, copy}),
+    () => ({
+      settings,
+      isLoaded,
+      updateSetting,
+      resetSettings,
+      copy,
+    }),
     [settings, isLoaded, updateSetting, resetSettings, copy],
   );
 

@@ -17,6 +17,8 @@ const desktopApi = {
   },
   hwAccel: {
     getDisabled: (): Promise<boolean> => ipcRenderer.invoke('desktop:get-hw-accel-disabled'),
+    getGpuFeatureStatus: (): Promise<Record<string, string>> =>
+      ipcRenderer.invoke('desktop:get-gpu-feature-status'),
     setDisabled: (disabled: boolean): Promise<{disabled: boolean; restartRequired: boolean}> =>
       ipcRenderer.invoke('desktop:set-hw-accel-disabled', Boolean(disabled)),
     relaunch: (): void => {

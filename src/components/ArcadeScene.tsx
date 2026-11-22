@@ -21,6 +21,7 @@ import {BubblePopGame} from '@/src/components/arcade/BubblePopGame';
 import {StarDefenderGame} from '@/src/components/arcade/StarDefenderGame';
 import {TurboRacerGame} from '@/src/components/arcade/TurboRacerGame';
 import {WordRainGame} from '@/src/components/arcade/WordRainGame';
+import {ArcadeVisualsSelector} from '@/src/components/arcade/ArcadeVisualsControl';
 import {useAppearance} from '@/src/context/AppearanceContext';
 import {queryWordBank} from '@/src/data/wordBank';
 import {
@@ -212,7 +213,7 @@ export const ArcadeScene: React.FC<ArcadeSceneProps> = ({
             </button>
             <h1 className="font-display text-3xl font-bold tracking-tight">Arcade</h1>
             <p className="text-sm" style={{color: 'var(--tv-text-muted)'}}>
-              Five offline-ready Canvas 2D games with live WPM telemetry and three difficulty tiers.
+              Five offline-ready 3D &amp; Classic 2D games with live WPM telemetry and three difficulty tiers.
             </p>
           </div>
 
@@ -263,14 +264,16 @@ export const ArcadeScene: React.FC<ArcadeSceneProps> = ({
           {ARCADE_GAMES.map((game) => {
             const Icon = game.icon;
             return (
-              <button
+              <div
                 key={game.id}
-                type="button"
-                onClick={() => startGame(game.id)}
                 className="tv-surface tv-card-hover rounded-2xl p-6 text-left flex flex-col justify-between gap-4"
               >
-                <div className="space-y-2.5">
-                  <div className="flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => startGame(game.id)}
+                  className="text-left space-y-2.5 focus:outline-none"
+                >
+                  <div className="flex items-center justify-between gap-2">
                     <span
                       className="inline-flex h-10 w-10 items-center justify-center rounded-xl border"
                       style={{
@@ -289,12 +292,20 @@ export const ArcadeScene: React.FC<ArcadeSceneProps> = ({
                   <p className="text-sm leading-relaxed" style={{color: 'var(--tv-text-muted)'}}>
                     {game.description}
                   </p>
-                </div>
+                </button>
 
-                <div className="text-xs font-semibold" style={{color: 'var(--tv-accent)'}}>
-                  Launch {game.title} →
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t" style={{borderColor: 'var(--tv-border)'}}>
+                  <ArcadeVisualsSelector gameId={game.id} compact />
+                  <button
+                    type="button"
+                    onClick={() => startGame(game.id)}
+                    className="text-xs font-semibold hover:underline"
+                    style={{color: 'var(--tv-accent)'}}
+                  >
+                    Launch {game.title} →
+                  </button>
                 </div>
-              </button>
+              </div>
             );
           })}
         </section>
