@@ -11,6 +11,7 @@ import {renderProfileAvatar} from '@/src/components/ProfileManagerModal';
 import {BrandLogoMark} from '@/src/components/SceneArtwork';
 import {useAppearance} from '@/src/context/AppearanceContext';
 import type {SceneId, UserProfile} from '@/src/types/app';
+import {useScreenInfo} from '@/src/utils/screenInfo';
 
 interface HeaderProps {
   activeScene: SceneId;
@@ -45,7 +46,16 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenProfiles,
 }) => {
   const {settings} = useAppearance();
-  const isFocusLayout = settings.layout === 'focus' && activeScene !== 'hub' && activeScene !== 'word-bank';
+  const screen = useScreenInfo();
+  const isFocusLayout =
+    (settings.layout === 'focus' || screen.layoutProfile === 'focus') &&
+    activeScene !== 'hub' &&
+    activeScene !== 'word-bank';
+  const isCompact = screen.layoutProfile === 'compact' || screen.height < 680;
+  const showInlineNav = !isFocusLayout && screen.width >= 900;
+  const showStatusText = screen.width >= 1060;
+  const showInstallText = screen.width >= 760;
+  const showProfileName = screen.width >= 600;
 
   const handleNav = (scene: SceneId) => {
     soundEngine.playUiTap();
@@ -60,19 +70,28 @@ export const Header: React.FC<HeaderProps> = ({
         borderColor: 'var(--tv-border)',
       }}
     >
-      <div className="mx-auto flex max-w-[1360px] items-center justify-between gap-3 lg:gap-6 px-4 py-3 sm:px-6">
+      <div
+        className={`tv-fluid-container flex items-center justify-between gap-2 ${
+          isCompact ? 'py-2' : 'py-2.5'
+        }`}
+      >
         <button
           type="button"
           onClick={() => handleNav('hub')}
-          className="flex items-center gap-2.5 text-left whitespace-nowrap shrink-0 rounded-lg py-1 pr-2 transition-opacity hover:opacity-90"
+          className="flex items-center gap-2 text-left whitespace-nowrap shrink-0 rounded-lg py-0.5 pr-1 transition-opacity hover:opacity-90"
           aria-label="TypeVerse Home"
         >
           <BrandLogoMark className="w-7 h-7 shrink-0" />
-          <span className="font-display text-lg font-bold tracking-tight">TypeVerse</span>
+          <span
+            className="font-display font-bold tracking-tight"
+            style={{fontSize: 'var(--tv-text-lg)'}}
+          >
+            TypeVerse
+          </span>
         </button>
 
-        {!isFocusLayout && (
-          <nav aria-label="Primary navigation" className="hidden md:flex items-center gap-0.5 lg:gap-1">
+        {showInlineNav && (
+          <nav aria-label="Primary navigation" className="flex items-center gap-0.5 min-w-0">
             {NAV_ITEMS.map((item) => {
               const active = activeScene === item.id;
               return (
@@ -81,8 +100,9 @@ export const Header: React.FC<HeaderProps> = ({
                   type="button"
                   aria-current={active ? 'page' : undefined}
                   onClick={() => handleNav(item.id)}
-                  className="relative px-2.5 lg:px-3 py-1.5 text-xs lg:text-sm font-medium whitespace-nowrap shrink-0 rounded-lg transition-colors"
+                  className="relative px-2.5 py-1.5 font-medium whitespace-nowrap shrink-0 rounded-lg transition-colors"
                   style={{
+                    fontSize: 'var(--tv-text-xs)',
                     color: active ? 'var(--tv-accent)' : 'var(--tv-text-muted)',
                     backgroundColor: active ? 'var(--tv-surface-elevated)' : 'transparent',
                   }}
@@ -94,9 +114,9 @@ export const Header: React.FC<HeaderProps> = ({
           </nav>
         )}
 
-        <div className="flex items-center gap-2.5 shrink-0">
+        <div className="flex items-center gap-2 shrink-0">
           <div
-            className="flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium whitespace-nowrap shrink-0"
+            className="flex items-center gap-1.5 rounded-lg border px-2 py-1.5 text-xs font-medium whitespace-nowrap shrink-0"
             style={{
               borderColor: 'var(--tv-border)',
               backgroundColor: 'var(--tv-surface)',
@@ -115,7 +135,9 @@ export const Header: React.FC<HeaderProps> = ({
             ) : (
               <WifiOff className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
             )}
-            <span>{isOnline ? 'Fresh words on' : 'Using saved words'}</span>
+            {showStatusText && (
+              <span>{isOnline ? 'Fresh words on' : 'Using saved words'}</span>
+            )}
           </div>
 
           {activeProfile && (
@@ -136,7 +158,9 @@ export const Header: React.FC<HeaderProps> = ({
               <span style={{color: activeProfile.colour}}>
                 {renderProfileAvatar(activeProfile.avatar, 'w-3.5 h-3.5')}
               </span>
-              <span className="max-w-[90px] truncate">{activeProfile.name}</span>
+              {showProfileName && (
+                <span className="max-w-[90px] truncate">{activeProfile.name}</span>
+              )}
             </button>
           )}
 
@@ -147,15 +171,16 @@ export const Header: React.FC<HeaderProps> = ({
                 soundEngine.playUiTap();
                 onInstallClick();
               }}
-              className="hidden sm:inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium whitespace-nowrap shrink-0 transition-colors hover:opacity-90"
+              className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium whitespace-nowrap shrink-0 transition-colors hover:opacity-90"
               style={{
                 borderColor: 'var(--tv-border)',
                 backgroundColor: 'var(--tv-surface-elevated)',
                 color: 'var(--tv-text)',
               }}
+              aria-label="Install app"
             >
               <Download className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-              <span>Install app</span>
+              {showInstallText && <span>Install app</span>}
             </button>
           )}
 
@@ -183,7 +208,7 @@ export const Header: React.FC<HeaderProps> = ({
               soundEngine.playUiTap();
               onOpenAppearance();
             }}
-            className="inline-flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-xs font-semibold whitespace-nowrap shrink-0 transition-opacity hover:opacity-90"
+            className="inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap shrink-0 transition-opacity hover:opacity-90"
             style={{
               backgroundColor: 'var(--tv-accent)',
               color: 'var(--tv-accent-fg)',
@@ -195,10 +220,10 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      {!isFocusLayout && (
+      {!isFocusLayout && !showInlineNav && (
         <nav
-          aria-label="Mobile navigation"
-          className="flex md:hidden items-center gap-1 overflow-x-auto border-t px-4 py-2"
+          aria-label="Compact navigation"
+          className="flex items-center gap-1 overflow-x-auto border-t px-3 py-1.5"
           style={{borderColor: 'var(--tv-border)'}}
         >
           {NAV_ITEMS.map((item) => {

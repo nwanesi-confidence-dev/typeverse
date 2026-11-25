@@ -7,6 +7,7 @@ import {
 import {buildRenderSpecForMode, modeFromDetail3D} from '@/src/graphics/decision';
 import {
   addRealisticStudioLights,
+  disposeSessionEnvironmentIfRenderer,
   disposeThreeScene,
   fitPerspectiveCamera,
   getOrCreateSessionEnvironment,
@@ -15,6 +16,7 @@ import {
 import {createPostPipeline, type ManagedPostPipeline} from '@/src/three/postPipeline';
 import {
   acquireSessionPbrTextures,
+  releaseSessionPbrTextures,
   type ProceduralPbrTextureSet,
 } from '@/src/three/proceduralTextures';
 import type {GraphicsDetailLevel, RealisticOptions} from '@/src/types/app';
@@ -449,6 +451,11 @@ export async function mountDetailPreviewScene(options: {
         postPipeline.dispose();
         postPipeline = null;
       }
+      if (pbrSet) {
+        releaseSessionPbrTextures(pbrSet.sizeTier);
+        pbrSet = null;
+      }
+      disposeSessionEnvironmentIfRenderer(renderer);
       disposeThreeScene(scene);
       legendTex.dispose();
       renderer.dispose();

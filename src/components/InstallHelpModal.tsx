@@ -19,7 +19,7 @@ export const InstallHelpModal: React.FC<InstallHelpModalProps> = ({open, isIOS, 
       onClick={onClose}
     >
       <div
-        className="tv-surface w-full max-w-md rounded-2xl p-6 shadow-2xl space-y-4"
+        className="tv-surface w-[min(100%,28rem)] max-h-[92%] overflow-y-auto rounded-2xl p-5 sm:p-6 shadow-2xl space-y-4"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between pb-3 border-b" style={{borderColor: 'var(--tv-border)'}}>

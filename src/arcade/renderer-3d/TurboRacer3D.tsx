@@ -1,4 +1,5 @@
-import React from 'react';
+import React, {useRef} from 'react';
+import {usePlayfieldSafeInsets} from '@/src/arcade/usePlayfieldSize';
 import {ThreeCanvasHost} from '@/src/three/ThreeCanvasHost';
 import type {TurboRacer3DState} from '@/src/three/scenes/turboRacer3DScene';
 import type {GraphicsGameId, ResolvedGraphicsMode} from '@/src/types/app';
@@ -27,28 +28,35 @@ export const TurboRacer3D: React.FC<TurboRacer3DProps> = ({
   onContextLostPermanent,
   sceneState,
   hud,
-}) => (
-  <div className="relative w-full h-64 sm:h-72 bg-[#070B18]">
-    <ThreeCanvasHost
-      loadScene={loadTurboRacer3DScene}
-      sceneKey="turbo-racer-3d"
-      gameId={gameId}
-      forcedMode={forcedMode}
-      retryNonce={retryNonce}
-      onContextLostPermanent={onContextLostPermanent}
-      sceneState={sceneState}
-      isTypingActive={true}
-      className="w-full h-full pointer-events-none"
-    />
-    <div
-      className="pointer-events-none absolute top-3 left-3 z-10 rounded-lg border px-3 py-1.5 font-typing text-xs font-bold tracking-wide tabular-nums"
-      style={{
-        backgroundColor: 'rgba(7, 11, 24, 0.88)',
-        borderColor: 'var(--tv-border)',
-        color: '#E2E8F0',
-      }}
-    >
-      POS {hud.rank}/4 · WORD {hud.currentWordNumber}/{hud.totalWords} · SCORE {hud.score}
+}) => {
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const safe = usePlayfieldSafeInsets(wrapperRef);
+
+  return (
+    <div ref={wrapperRef} className="relative w-full h-full min-h-[180px] bg-[#070B18]">
+      <ThreeCanvasHost
+        loadScene={loadTurboRacer3DScene}
+        sceneKey="turbo-racer-3d"
+        gameId={gameId}
+        forcedMode={forcedMode}
+        retryNonce={retryNonce}
+        onContextLostPermanent={onContextLostPermanent}
+        sceneState={sceneState}
+        isTypingActive={true}
+        className="w-full h-full pointer-events-none"
+      />
+      <div
+        className="pointer-events-none absolute z-10 rounded-lg border px-3 py-1.5 font-typing text-xs font-bold tracking-wide tabular-nums max-w-[calc(100%-24px)] truncate"
+        style={{
+          top: `${safe.topPx}px`,
+          left: `${safe.leftPx}px`,
+          backgroundColor: 'rgba(7, 11, 24, 0.88)',
+          borderColor: 'var(--tv-border)',
+          color: '#E2E8F0',
+        }}
+      >
+        POS {hud.rank}/4 · WORD {hud.currentWordNumber}/{hud.totalWords} · SCORE {hud.score}
+      </div>
     </div>
-  </div>
-);
+  );
+};

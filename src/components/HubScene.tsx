@@ -18,6 +18,7 @@ import {loadWordBank, type WordBankSummary} from '@/src/data/wordBank';
 import {ThreeCanvasHost} from '@/src/three/ThreeCanvasHost';
 import type {LucideIcon} from 'lucide-react';
 import type {ProfileProgress, SceneId, UserProfile} from '@/src/types/app';
+import {useScreenInfo} from '@/src/utils/screenInfo';
 
 const loadHubOrbitScene = () => import('@/src/three/scenes/hubOrbitScene');
 
@@ -118,7 +119,17 @@ export const HubScene: React.FC<HubSceneProps> = ({
     },
   ];
 
-  const isCompact = settings.layout === 'compact';
+  const screen = useScreenInfo();
+  const isCompact = screen.layoutProfile === 'compact';
+  const heroTwoCol = screen.width >= 980;
+  const modeCols =
+    screen.width < 660
+      ? 1
+      : screen.width < 1080
+        ? 2
+        : screen.layoutProfile === 'super-ultrawide' || screen.width >= 2600
+          ? 6
+          : 3;
 
   const handleOpenScene = (scene: SceneId) => {
     soundEngine.playUiTap();
@@ -157,15 +168,15 @@ export const HubScene: React.FC<HubSceneProps> = ({
   };
 
   return (
-    <div className="relative">
+    <div className="relative min-h-full">
       <ThreeCanvasHost
         loadScene={loadHubOrbitScene}
         sceneKey="hub-orbit"
         className="fixed inset-0 z-0 pointer-events-none opacity-80"
       />
-      <main className={`relative z-10 mx-auto max-w-[1360px] px-4 sm:px-6 ${isCompact ? 'py-5 space-y-6' : 'py-8 space-y-10'}`}>
+      <main className={`relative z-10 tv-fluid-container ${isCompact ? 'py-4 space-y-5' : 'py-7 space-y-8'}`}>
       {/* Hero Banner */}
-      <section className="tv-glass tv-dash-card relative overflow-hidden rounded-2xl p-7 sm:p-10">
+      <section className={`tv-glass tv-dash-card relative overflow-hidden rounded-2xl ${isCompact ? 'p-5' : 'p-7'}`}>
         <div
           className="pointer-events-none absolute inset-0 opacity-45"
           aria-hidden="true"
@@ -175,25 +186,35 @@ export const HubScene: React.FC<HubSceneProps> = ({
           }}
         />
 
-        <div className="relative grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
-          <div className="lg:col-span-7 space-y-4">
+        <div
+          className="relative grid gap-6 items-center"
+          style={{
+            gridTemplateColumns: heroTwoCol
+              ? 'minmax(0, 7fr) minmax(0, 5fr)'
+              : 'minmax(0, 1fr)',
+          }}
+        >
+          <div className="space-y-4 min-w-0">
             <div className="text-xs font-medium" style={{color: 'var(--tv-accent)'}}>
               Offline-First Touch-Typing Studio · {isOnline ? 'Online Ready' : 'Offline Ready'}
             </div>
 
-            <h1 className="font-display text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight text-balance leading-[1.12]">
+            <h1
+              className="font-display font-bold tracking-tight text-balance leading-[1.12]"
+              style={{fontSize: 'clamp(1.75rem, calc(2.35rem * min(var(--ui-scale), 1.35)), 3.25rem)'}}
+            >
               Master touch typing from home row to 80+ WPM.
             </h1>
 
-            <p className="max-w-2xl text-base leading-relaxed" style={{color: 'var(--tv-text-muted)'}}>
+            <p className="max-w-2xl leading-relaxed" style={{color: 'var(--tv-text-muted)', fontSize: 'var(--tv-text-base)'}}>
               Zero-latency typing telemetry, structured lessons, and rhythm-driven arcade challenges—built to launch instantaneously and run anywhere, online or offline.
             </p>
 
-            <div className="flex flex-wrap items-center gap-3 pt-2">
+            <div className="flex flex-wrap items-center gap-3 pt-1">
               <button
                 type="button"
                 onClick={() => handleOpenScene('speed-test')}
-                className="inline-flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold whitespace-nowrap transition-opacity hover:opacity-90"
+                className="inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold whitespace-nowrap transition-opacity hover:opacity-90"
                 style={{
                   backgroundColor: 'var(--tv-accent)',
                   color: 'var(--tv-accent-fg)',
@@ -206,7 +227,7 @@ export const HubScene: React.FC<HubSceneProps> = ({
               <button
                 type="button"
                 onClick={() => handleOpenScene('word-bank')}
-                className="inline-flex items-center gap-2 rounded-xl border px-4 py-3 text-sm font-medium whitespace-nowrap transition-colors"
+                className="inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-colors"
                 style={{
                   borderColor: 'var(--tv-border)',
                   backgroundColor: 'var(--tv-surface)',
@@ -224,7 +245,7 @@ export const HubScene: React.FC<HubSceneProps> = ({
                     soundEngine.playUiTap();
                     onOpenProfiles();
                   }}
-                  className="inline-flex items-center gap-2 rounded-xl border px-4 py-3 text-sm font-medium whitespace-nowrap transition-colors"
+                  className="inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-colors"
                   style={{
                     borderColor: 'var(--tv-border)',
                     backgroundColor: 'var(--tv-surface)',
@@ -234,48 +255,48 @@ export const HubScene: React.FC<HubSceneProps> = ({
                   <span style={{color: activeProfile.colour}}>
                     {renderProfileAvatar(activeProfile.avatar, 'w-4 h-4')}
                   </span>
-                  <span>Profile: {activeProfile.name}</span>
+                  <span className="truncate max-w-[14rem]">Profile: {activeProfile.name}</span>
                 </button>
               )}
             </div>
           </div>
 
-          <div className="lg:col-span-5 grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-3 min-w-0">
             <div
-              className="tv-dash-card rounded-xl border p-4 space-y-1"
+              className="tv-dash-card rounded-xl border p-4 space-y-1 min-w-0"
               style={{backgroundColor: 'var(--tv-surface)', borderColor: 'var(--tv-border)'}}
             >
-              <div className="text-xs" style={{color: 'var(--tv-text-muted)'}}>
+              <div className="text-xs truncate" style={{color: 'var(--tv-text-muted)'}}>
                 Bundled Words
               </div>
               <div className="font-display text-2xl font-bold tabular-nums">
                 {summary ? summary.totalWords.toLocaleString() : '3,100+'}
               </div>
-              <div className="text-xs" style={{color: 'var(--tv-text-muted)'}}>
+              <div className="text-xs truncate" style={{color: 'var(--tv-text-muted)'}}>
                 5 difficulty tiers
               </div>
             </div>
 
             <div
-              className="tv-dash-card rounded-xl border p-4 space-y-1"
+              className="tv-dash-card rounded-xl border p-4 space-y-1 min-w-0"
               style={{backgroundColor: 'var(--tv-surface)', borderColor: 'var(--tv-border)'}}
             >
-              <div className="text-xs" style={{color: 'var(--tv-text-muted)'}}>
+              <div className="text-xs truncate" style={{color: 'var(--tv-text-muted)'}}>
                 Sentences & Prose
               </div>
               <div className="font-display text-2xl font-bold tabular-nums">
                 {summary ? `${summary.totalSentences}+` : '320+'}
               </div>
-              <div className="text-xs" style={{color: 'var(--tv-text-muted)'}}>
+              <div className="text-xs truncate" style={{color: 'var(--tv-text-muted)'}}>
                 {summary ? `${summary.totalParagraphs} paragraphs` : '64 paragraphs'}
               </div>
             </div>
 
             <div
-              className="tv-dash-card rounded-xl border p-4 space-y-1"
+              className="tv-dash-card rounded-xl border p-4 space-y-1 min-w-0"
               style={{backgroundColor: 'var(--tv-surface)', borderColor: 'var(--tv-border)'}}
             >
-              <div className="text-xs" style={{color: 'var(--tv-text-muted)'}}>
+              <div className="text-xs truncate" style={{color: 'var(--tv-text-muted)'}}>
                 Active Theme
               </div>
               <button
@@ -284,7 +305,7 @@ export const HubScene: React.FC<HubSceneProps> = ({
                   soundEngine.playUiTap();
                   onOpenAppearance();
                 }}
-                className="font-display text-lg font-bold text-left hover:underline"
+                className="font-display text-lg font-bold text-left hover:underline truncate max-w-full block"
                 style={{color: 'var(--tv-accent)'}}
               >
                 {settings.theme === 'midnight-neon'
@@ -297,23 +318,23 @@ export const HubScene: React.FC<HubSceneProps> = ({
                         ? 'Classroom Light'
                         : 'High Contrast'}
               </button>
-              <div className="text-xs" style={{color: 'var(--tv-text-muted)'}}>
+              <div className="text-xs truncate" style={{color: 'var(--tv-text-muted)'}}>
                 {settings.spelling === 'british' ? 'British English' : 'American English'}
               </div>
             </div>
 
             <div
-              className="tv-dash-card rounded-xl border p-4 space-y-1"
+              className="tv-dash-card rounded-xl border p-4 space-y-1 min-w-0"
               style={{backgroundColor: 'var(--tv-surface)', borderColor: 'var(--tv-border)'}}
             >
-              <div className="text-xs" style={{color: 'var(--tv-text-muted)'}}>
+              <div className="text-xs truncate" style={{color: 'var(--tv-text-muted)'}}>
                 Goal & Streak
               </div>
               <div className="font-display text-2xl font-bold tabular-nums flex items-center gap-1.5">
-                <Flame className="w-5 h-5" style={{color: 'var(--tv-warning)'}} aria-hidden="true" />
-                <span>{profileProgress?.targetWpm ?? 60} WPM</span>
+                <Flame className="w-5 h-5 shrink-0" style={{color: 'var(--tv-warning)'}} aria-hidden="true" />
+                <span className="truncate">{profileProgress?.targetWpm ?? 60} WPM</span>
               </div>
-              <div className="text-xs tabular-nums" style={{color: 'var(--tv-text-muted)'}}>
+              <div className="text-xs tabular-nums truncate" style={{color: 'var(--tv-text-muted)'}}>
                 {profileProgress?.dailyGoalMinutes ?? 15} min daily · {profileProgress?.streakDays ?? 0}d streak
               </div>
             </div>
@@ -323,8 +344,8 @@ export const HubScene: React.FC<HubSceneProps> = ({
 
       {/* Mode Hub Grid */}
       <section aria-labelledby="modes-heading" className="tv-hub-perspective space-y-4">
-        <div className="flex items-baseline justify-between gap-4">
-          <h2 id="modes-heading" className="font-display text-xl font-bold tracking-tight">
+        <div className="flex flex-wrap items-baseline justify-between gap-4">
+          <h2 id="modes-heading" className="font-display font-bold tracking-tight" style={{fontSize: 'var(--tv-text-xl)'}}>
             Training & Arcade Modes
           </h2>
           <span className="text-xs" style={{color: 'var(--tv-text-muted)'}}>
@@ -332,7 +353,10 @@ export const HubScene: React.FC<HubSceneProps> = ({
           </span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        <div
+          className="grid gap-4"
+          style={{gridTemplateColumns: `repeat(${modeCols}, minmax(0, 1fr))`}}
+        >
           {modeCards.map((card) => {
             const Icon = card.icon;
             return (
@@ -342,21 +366,21 @@ export const HubScene: React.FC<HubSceneProps> = ({
                 onClick={() => handleOpenScene(card.id)}
                 onPointerMove={handleCardPointerMove}
                 onPointerLeave={handleCardPointerLeave}
-                className="tv-surface tv-card-hover tv-tilt-card group rounded-2xl p-5 text-left flex flex-col justify-between gap-4"
+                className="tv-surface tv-card-hover tv-tilt-card group rounded-2xl p-4 text-left flex flex-col justify-between gap-3 min-w-0"
               >
-                <div className="space-y-3 w-full">
+                <div className="space-y-3 w-full min-w-0">
                   <div className="rounded-xl overflow-hidden border" style={{borderColor: 'var(--tv-border)', backgroundColor: 'var(--tv-bg)'}}>
                     <SceneIllustration scene={card.id} />
                   </div>
 
-                  <div className="space-y-1.5">
-                    <div className="text-xs font-medium" style={{color: 'var(--tv-text-muted)'}}>
+                  <div className="space-y-1.5 min-w-0">
+                    <div className="text-xs font-medium truncate" style={{color: 'var(--tv-text-muted)'}}>
                       {card.meta}
                     </div>
                     <div className="flex items-center justify-between gap-2">
-                      <h3 className="font-display text-lg font-bold flex items-center gap-2">
+                      <h3 className="font-display text-lg font-bold flex items-center gap-2 min-w-0">
                         <Icon className="w-4 h-4 shrink-0" style={{color: 'var(--tv-accent)'}} aria-hidden="true" />
-                        <span>{card.title}</span>
+                        <span className="truncate">{card.title}</span>
                       </h3>
                       <ArrowRight
                         className="w-4 h-4 shrink-0 opacity-50 transition-transform group-hover:translate-x-0.5 group-hover:opacity-100"

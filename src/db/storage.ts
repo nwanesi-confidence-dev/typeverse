@@ -206,9 +206,24 @@ export function getStorageBackendName(): 'IndexedDB' | 'localStorage' {
   return storageBackend === 'indexeddb' ? 'IndexedDB' : 'localStorage';
 }
 
+function normalizeLayoutPreference(raw: unknown): AppearanceSettings['layout'] {
+  if (raw === 'auto' || raw === 'standard' || raw === 'wide' || raw === 'focus') {
+    return raw;
+  }
+  if (raw === 'compact') return 'standard';
+  return 'auto';
+}
+
 export async function loadSettings(): Promise<AppearanceSettings> {
-  const saved = await idbGet<Partial<AppearanceSettings>>('settings', 'appearance');
-  return {...DEFAULT_SETTINGS, ...(saved ?? {})};
+  const saved = await idbGet<Partial<AppearanceSettings> & {layout?: unknown}>(
+    'settings',
+    'appearance',
+  );
+  return {
+    ...DEFAULT_SETTINGS,
+    ...(saved ?? {}),
+    layout: normalizeLayoutPreference(saved?.layout),
+  };
 }
 
 export async function saveSettings(settings: AppearanceSettings): Promise<void> {
@@ -279,6 +294,22 @@ export async function saveProfile(profile: UserProfile): Promise<void> {
   await idbSet('profiles', profile.id, profile);
 }
 
+type ProfileProgressListener = (profileId: string) => void;
+const profileProgressListeners = new Set<ProfileProgressListener>();
+
+export function subscribeProfileProgressChanged(
+  listener: ProfileProgressListener,
+): () => void {
+  profileProgressListeners.add(listener);
+  return () => {
+    profileProgressListeners.delete(listener);
+  };
+}
+
+function emitProfileProgressChanged(profileId: string): void {
+  profileProgressListeners.forEach((fn) => fn(profileId));
+}
+
 export async function getActiveProfileId(): Promise<string> {
   const id = await idbGet<string>('meta', 'activeProfileId');
   return id ?? DEFAULT_PROFILE_ID;
@@ -286,6 +317,7 @@ export async function getActiveProfileId(): Promise<string> {
 
 export async function setActiveProfileId(profileId: string): Promise<void> {
   await idbSet('meta', 'activeProfileId', profileId);
+  emitProfileProgressChanged(profileId);
 }
 
 export async function loadProfileProgress(profileId: string): Promise<ProfileProgress> {
@@ -298,6 +330,7 @@ export async function loadProfileProgress(profileId: string): Promise<ProfilePro
 
 export async function saveProfileProgress(progress: ProfileProgress): Promise<void> {
   await idbSet('progress', progress.profileId, progress);
+  emitProfileProgressChanged(progress.profileId);
 }
 
 const MAX_FRESH_PACKS = 30;

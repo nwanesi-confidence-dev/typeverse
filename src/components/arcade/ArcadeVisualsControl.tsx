@@ -56,12 +56,18 @@ export function useRoundLockedVisuals(
     setLockedMode('2d');
   }, []);
 
+  const isSoftwareRenderer =
+    gfx.hardwareReport.isSoftwareRenderer ||
+    gfx.hardwareReport.gpuFeatureSoftwareOnly ||
+    gfx.hardwareReport.desktopHwAccelDisabled;
+
   return {
     lockedMode,
     show3D: lockedMode !== '2d' && webgl2Supported,
     effectiveGlobalMode: gfx.effectiveMode,
     override: gfx.gameOverrides[gameId] ?? 'default',
     webgl2Supported,
+    isSoftwareRenderer,
     contextLostOpen,
     webglRetryNonce,
     markContextLost,
@@ -161,31 +167,31 @@ export const ArcadeStartBanner: React.FC<ArcadeStartBannerProps> = ({
 
   return (
     <div
-      className="flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3"
+      className="shrink-0 flex flex-wrap items-center justify-between gap-2.5 rounded-xl border px-3.5 py-2 sm:px-4 sm:py-2.5"
       style={{
         backgroundColor: 'var(--tv-surface-elevated)',
         borderColor: 'var(--tv-border)',
       }}
       data-testid={`arcade-start-${gameId}`}
     >
-      <div className="space-y-0.5">
-        <div className="text-xs font-semibold" style={{color: 'var(--tv-text)'}}>
+      <div className="min-w-0 space-y-0.5">
+        <div className="text-xs font-semibold truncate" style={{color: 'var(--tv-text)'}}>
           {title} · {difficultyLabel} · Ready ({formatResolvedModeLabel(gfx.effectiveMode)})
         </div>
-        <div className="text-xs" style={{color: 'var(--tv-text-muted)'}}>
+        <div className="text-[11px] sm:text-xs truncate" style={{color: 'var(--tv-text-muted)'}}>
           {hint}
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3">
-        <ArcadeVisualsSelector gameId={gameId} />
+      <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+        <ArcadeVisualsSelector gameId={gameId} compact />
         <button
           type="button"
           onClick={() => {
             soundEngine.playUiTap();
             onStart();
           }}
-          className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-semibold"
+          className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold"
           style={{backgroundColor: 'var(--tv-accent)', color: 'var(--tv-accent-fg)'}}
         >
           <Play className="w-3.5 h-3.5" aria-hidden="true" />

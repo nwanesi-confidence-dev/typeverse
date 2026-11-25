@@ -1,19 +1,57 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import * as THREE from 'three';
+import {
+  CANONICAL_PLAY_ASPECT,
+  MAX_2D_CANVAS_PIXELS,
+  MAX_EXTENDED_ASPECT,
+  computeCanvas2DBackingSize,
+  computePlayZoneViewport,
+  computeSafeZoneHudInsets,
+} from '../src/arcade/playZone';
 import {BeatTyperEngine} from '../src/arcade/engine/beatTyperEngine';
 import {BubblePopEngine} from '../src/arcade/engine/bubblePopEngine';
 import {StarDefenderEngine} from '../src/arcade/engine/starDefenderEngine';
 import {TurboRacerEngine} from '../src/arcade/engine/turboRacerEngine';
 import {WordRainEngine} from '../src/arcade/engine/wordRainEngine';
 import {
+  buildRenderSpecForMode,
   computeHardwareFingerprint,
   decideGraphicsModeFromReport,
   isGpuFeatureStatusSoftwareOnly,
+  RENDER_SPECS,
   resolveEffectiveMode,
 } from '../src/graphics/decision';
+import {DETAIL_CONSTANTS, REALISTIC_VISUAL_TUNING} from '../src/graphics/detail';
 import {GRAPHICS_THRESHOLDS} from '../src/graphics/thresholds';
-import type {HardwareReport, SpeedTestResult} from '../src/types/app';
+import {
+  computePlayZoneProjection,
+  disposeThreeScene,
+  fitPerspectiveCamera,
+} from '../src/three/core';
+import type {HardwareReport, ProfileProgress, SpeedTestResult} from '../src/types/app';
 import type {CompletedSessionStats} from '../src/types/typing';
+import {
+  computeDailyGoalProgress,
+  getLocalDateKey,
+  getTodayActivitySeconds,
+} from '../src/utils/progression';
+import {
+  computeScreenInfoSnapshot,
+  LAYOUT_TESTER_PRESETS,
+} from '../src/utils/screenInfo';
+import {
+  computeHudLayout,
+  computeKeyboardLayout,
+  computeTypingArenaLayout,
+} from '../src/utils/responsiveLayout';
+import {
+  MIN_WINDOW_HEIGHT,
+  MIN_WINDOW_WIDTH,
+  clampWindowBoundsToDisplays,
+  computeFirstRunBounds,
+  resolveRestoredWindowBounds,
+} from '../shared/windowBounds';
 
 function makeHardwareReport(overrides: Partial<HardwareReport> = {}): HardwareReport {
   return {
@@ -247,6 +285,86 @@ test('DETAIL_CONSTANTS and computeRenderResolution enforce budgets and ~8M pixel
     capped.totalPixels <= GRAPHICS_THRESHOLDS.REALISTIC_MAX_PIXELS + 12_000,
     `Expected pixels near 8M cap, got ${capped.totalPixels}`,
   );
+  assert.equal(GRAPHICS_THRESHOLDS.REALISTIC_TEXTURE_MEMORY_BUDGET_MB, 150);
+  assert.equal(GRAPHICS_THRESHOLDS.REALISTIC_MIN_MEDIAN_FPS, 58);
+  assert.equal(GRAPHICS_THRESHOLDS.REALISTIC_MIN_ONE_PERCENT_LOW_FPS, 45);
+});
+
+test('Phase 12 Audit: Light/Full parity, manual Realistic toggles, geometry budgets & 20x disposal', () => {
+  // Light & Full preserve Phase 11 settings untouched
+  assert.equal(RENDER_SPECS['3d-light'].pixelRatioCap, 1);
+  assert.equal(RENDER_SPECS['3d-light'].shadows, false);
+  assert.equal(RENDER_SPECS['3d-light'].fog, false);
+  assert.equal(RENDER_SPECS['3d-light'].postEffects, false);
+  assert.equal(RENDER_SPECS['3d-light'].maxDrawCalls, 50);
+
+  assert.equal(RENDER_SPECS['3d-full'].pixelRatioCap, 2);
+  assert.equal(RENDER_SPECS['3d-full'].shadows, false);
+  assert.equal(RENDER_SPECS['3d-full'].fog, true);
+  assert.equal(RENDER_SPECS['3d-full'].bloom, true);
+  assert.equal(RENDER_SPECS['3d-full'].postEffects, false);
+  assert.equal(RENDER_SPECS['3d-full'].maxDrawCalls, 100);
+
+  // Manual Realistic toggles switch MSAA render target vs native AA cleanly
+  const postOnSpec = buildRenderSpecForMode('3d-realistic', {
+    renderScale: 1.25,
+    shadows: true,
+    postEffects: true,
+    hubDof: false,
+    speedStreaks: true,
+  });
+  assert.equal(postOnSpec.multisampleSamples, 4);
+  assert.equal(postOnSpec.antialias, false);
+  assert.equal(postOnSpec.shadows, true);
+  assert.equal(postOnSpec.renderScale, 1.25);
+  assert.equal(REALISTIC_VISUAL_TUNING.shadowMapSize, 2048);
+
+  const postOffSpec = buildRenderSpecForMode('3d-realistic', {
+    renderScale: 0.75,
+    shadows: false,
+    postEffects: false,
+    hubDof: false,
+    speedStreaks: false,
+  });
+  assert.equal(postOffSpec.multisampleSamples, 0);
+  assert.equal(postOffSpec.antialias, true);
+  assert.equal(postOffSpec.shadows, false);
+  assert.equal(postOffSpec.bloom, false);
+
+  // Measure actual Three.js procedural Realistic geometry triangle counts & 20x scene disposal
+  const countTris = (g: THREE.BufferGeometry) =>
+    g.index ? g.index.count / 3 : g.attributes.position.count / 3;
+
+  const c = DETAIL_CONSTANTS.realistic;
+  let maxSceneTris = 0;
+  for (let cycle = 0; cycle < 20; cycle++) {
+    const scene = new THREE.Scene();
+    const sGeo = new THREE.SphereGeometry(0.68, c.sphereSegments, Math.round(c.sphereSegments * 0.75));
+    const iGeo = new THREE.IcosahedronGeometry(0.68, c.asteroidIcosaDetail);
+    const lGeo = new THREE.LatheGeometry(
+      [new THREE.Vector2(0, 0), new THREE.Vector2(0.5, 0.5), new THREE.Vector2(0.2, 1.0)],
+      c.latheSegments,
+    );
+    const rGeo = new THREE.PlaneGeometry(15.2, 790, 12, c.roadSubdivisions);
+
+    const worstBubbleSceneTris = countTris(sGeo) * 12;
+    const worstAsteroidSceneTris = countTris(iGeo) * 10;
+    const worstRainSceneTris = countTris(lGeo) * 10 + countTris(rGeo);
+    maxSceneTris = Math.max(worstBubbleSceneTris, worstAsteroidSceneTris, worstRainSceneTris);
+
+    const mat = new THREE.MeshPhysicalMaterial({roughness: 0.2, metalness: 0.8});
+    scene.add(new THREE.Mesh(sGeo, mat));
+    scene.add(new THREE.Mesh(iGeo, mat));
+    scene.add(new THREE.Mesh(lGeo, mat));
+    scene.add(new THREE.Mesh(rGeo, mat));
+
+    disposeThreeScene(scene);
+    assert.equal(scene.children.length, 0, 'Scene must clear all children on dispose');
+  }
+  assert.ok(
+    maxSceneTris <= c.triangleBudget,
+    `Realistic hero triangle budget exceeded: ${maxSceneTris} > ${c.triangleBudget}`,
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -432,3 +550,348 @@ test('BeatTyperEngine produces identical judgement counts, WPM, XP, and stars in
 
   assertArcadeParity('BeatTyperEngine', runBeat('2d'), runBeat('3d'));
 });
+
+test('computeDailyGoalProgress and getTodayActivitySeconds track profile dailyGoalMinutes accurately', () => {
+  const today = getLocalDateKey();
+  const sampleProgress: Pick<ProfileProgress, 'dailyGoalMinutes' | 'dailyActivity'> = {
+    dailyGoalMinutes: 20,
+    dailyActivity: {
+      [today]: {seconds: 450, words: 300, sessions: 3},
+    },
+  };
+
+  assert.equal(getTodayActivitySeconds(sampleProgress as ProfileProgress, today), 450);
+  assert.equal(getTodayActivitySeconds(null, today), 0);
+
+  // Default empty progress
+  const empty = computeDailyGoalProgress({});
+  assert.equal(empty.goalMinutes, 15);
+  assert.equal(empty.todayMinutes, 0);
+  assert.equal(empty.pct, 0);
+  assert.equal(empty.goalReached, false);
+
+  // Saved 450s (7.5 min) + 150s live elapsed (2.5 min) out of 20 min = 50%
+  const activeRun = computeDailyGoalProgress({
+    dailyGoalMinutes: sampleProgress.dailyGoalMinutes,
+    savedTodaySeconds: getTodayActivitySeconds(sampleProgress as ProfileProgress, today),
+    liveElapsedMs: 150_400,
+    includeLiveElapsed: true,
+  });
+  assert.equal(activeRun.totalSeconds, 600);
+  assert.equal(activeRun.todayMinutes, 10);
+  assert.equal(activeRun.pct, 50);
+  assert.equal(activeRun.goalReached, false);
+
+  // Finished session excludes liveElapsedMs so saved dailyActivity is not double-counted
+  const finishedRun = computeDailyGoalProgress({
+    dailyGoalMinutes: sampleProgress.dailyGoalMinutes,
+    savedTodaySeconds: 600,
+    liveElapsedMs: 150_400,
+    includeLiveElapsed: false,
+  });
+  assert.equal(finishedRun.totalSeconds, 600);
+  assert.equal(finishedRun.todayMinutes, 10);
+  assert.equal(finishedRun.pct, 50);
+
+  // Exceeding dailyGoalMinutes caps percentage at 100 while preserving actual minutes
+  const exceeded = computeDailyGoalProgress({
+    dailyGoalMinutes: 15,
+    savedTodaySeconds: 1200,
+    liveElapsedMs: 0,
+    includeLiveElapsed: false,
+  });
+  assert.equal(exceeded.todayMinutes, 20);
+  assert.equal(exceeded.pct, 100);
+  assert.equal(exceeded.goalReached, true);
+});
+
+test('Phase 13A screenInfo resolves size classes, aspect classes, layout profiles, and --ui-scale across all targets', () => {
+  const mk = (
+    width: number,
+    height: number,
+    overrides?: Partial<Parameters<typeof computeScreenInfoSnapshot>[0]>,
+  ) =>
+    computeScreenInfoSnapshot({
+      width,
+      height,
+      devicePixelRatio: 1,
+      layoutPreference: 'auto',
+      interfaceSize: 'auto',
+      widePanels: true,
+      emulatedSize: null,
+      fitToWindow: true,
+      hostWindowWidth: width,
+      hostWindowHeight: height,
+      ...overrides,
+    });
+
+  // Compact small laptop
+  const small = mk(1024, 600);
+  assert.equal(small.sizeClass, 'md');
+  assert.equal(small.layoutProfile, 'compact');
+  assert.equal(small.uiScale, 0.8);
+  assert.equal(small.showSidePanels, false);
+
+  // Baseline 1366x768
+  const base = mk(1366, 768);
+  assert.equal(base.sizeClass, 'lg');
+  assert.equal(base.aspectClass, 'standard');
+  assert.equal(base.layoutProfile, 'standard');
+  assert.equal(base.uiScale, 1);
+
+  // 34-inch 21:9 ultrawide (3440x1440)
+  const uw = mk(3440, 1440);
+  assert.equal(uw.sizeClass, '2xl');
+  assert.equal(uw.aspectClass, 'ultrawide');
+  assert.equal(uw.layoutProfile, 'wide');
+  assert.equal(uw.showSidePanels, true);
+  assert.equal(uw.uiScale, 1.875);
+
+  // 32:9 super-ultrawide (5120x1440)
+  const suw = mk(5120, 1440);
+  assert.equal(suw.aspectClass, 'super-ultrawide');
+  assert.equal(suw.layoutProfile, 'super-ultrawide');
+  assert.equal(suw.showSidePanels, true);
+
+  // 4K clamps --ui-scale at 2.2
+  const fourK = mk(3840, 2160);
+  assert.equal(fourK.uiScale, 2.2);
+  assert.equal(fourK.layoutProfile, 'standard');
+
+  // Portrait tall window
+  const portrait = mk(1080, 1920);
+  assert.equal(portrait.orientation, 'portrait');
+  assert.equal(portrait.aspectClass, 'portrait');
+  assert.equal(portrait.layoutProfile, 'portrait');
+
+  // Manual Settings overrides
+  const focusUw = mk(3440, 1440, {layoutPreference: 'focus'});
+  assert.equal(focusUw.layoutProfile, 'focus');
+  assert.equal(focusUw.showSidePanels, false);
+
+  const panelsOff = mk(3440, 1440, {widePanels: false});
+  assert.equal(panelsOff.layoutProfile, 'wide');
+  assert.equal(panelsOff.showSidePanels, false);
+
+  const largeBase = mk(1366, 768, {interfaceSize: 'large'});
+  assert.equal(largeBase.uiScale, 1.18);
+
+  const smallBase = mk(1366, 768, {interfaceSize: 'small'});
+  assert.equal(smallBase.uiScale, 0.85);
+
+  assert.equal(LAYOUT_TESTER_PRESETS.length, 8);
+});
+
+test('Phase 13B responsiveLayout enforces readable text bounds, 3-line viewport, keyboard scaling, and HUD cols', () => {
+  const mkScreen = (width: number, height: number) =>
+    computeScreenInfoSnapshot({
+      width,
+      height,
+      devicePixelRatio: 1,
+      layoutPreference: 'auto',
+      interfaceSize: 'auto',
+      widePanels: true,
+      emulatedSize: null,
+      fitToWindow: true,
+      hostWindowWidth: width,
+      hostWindowHeight: height,
+    });
+
+  const sizes: Array<[number, number]> = [
+    [1024, 600],
+    [1366, 768],
+    [3440, 1440],
+    [5120, 1440],
+    [3840, 2160],
+    [1080, 1920],
+  ];
+
+  for (const [w, h] of sizes) {
+    const scr = mkScreen(w, h);
+    for (const tz of ['S', 'M', 'L', 'XL'] as const) {
+      const arena = computeTypingArenaLayout(scr, tz);
+      assert.ok(arena.fontSizePx >= 16 && arena.fontSizePx <= 36, `${w}x${h} ${tz} font=${arena.fontSizePx}`);
+      const expectedMinHeight = Math.ceil(arena.fontSizePx * arena.lineHeight * 3 + arena.viewportPaddingY * 2);
+      assert.ok(
+        arena.viewportHeightPx >= expectedMinHeight,
+        `${w}x${h} ${tz} viewportHeightPx ${arena.viewportHeightPx} < ${expectedMinHeight}`,
+      );
+      assert.ok(arena.maxCh >= 60 && arena.maxCh <= 86);
+    }
+  }
+
+  // Compact / short hides finger guide first and shrinks key height
+  const small = mkScreen(1024, 600);
+  const smallKb = computeKeyboardLayout(small);
+  assert.equal(smallKb.allowFingerGuide, false);
+  assert.equal(smallKb.keyHeightPx, 28);
+
+  // Baseline 1366x768 keeps finger guide visible and compact-free keyboard
+  const base = mkScreen(1366, 768);
+  const baseKb = computeKeyboardLayout(base);
+  assert.equal(baseKb.allowFingerGuide, true);
+  assert.ok(baseKb.keyHeightPx >= 33);
+
+  // Ultrawide 3440x1440 scales keys smoothly and shows 3 HUD columns even with side panels
+  const uw = mkScreen(3440, 1440);
+  const uwKb = computeKeyboardLayout(uw);
+  const uwHud = computeHudLayout(uw);
+  assert.equal(uwKb.allowFingerGuide, true);
+  assert.ok(uwKb.keyHeightPx >= 46);
+  assert.equal(uwHud.cols, 3);
+
+  // Portrait 1080x1920 keeps 3-column or stacked HUD cleanly without side panels
+  const portrait = mkScreen(1080, 1920);
+  const portraitHud = computeHudLayout(portrait);
+  assert.equal(portraitHud.cols, 1);
+
+  // Super-ultrawide 5120x1440 keeps 82ch max typing width and 3 HUD columns
+  const suw = mkScreen(5120, 1440);
+  assert.equal(computeTypingArenaLayout(suw, 'M').maxCh, 82);
+  assert.equal(computeHudLayout(suw).cols, 3);
+});
+
+test('Phase 13C playZone viewport, 2D backing pixel cap, and 3D camera projection framing work across all screens', () => {
+  const sizes: Array<[number, number]> = [
+    [1024, 600],
+    [1366, 768],
+    [3440, 1440],
+    [5120, 1440],
+    [1080, 1920],
+  ];
+
+  for (const [w, h] of sizes) {
+    const vp = computePlayZoneViewport(w, h);
+    assert.ok(Math.abs(vp.playW / vp.playH - CANONICAL_PLAY_ASPECT) < 0.01, `${w}x${h} play zone aspect mismatch`);
+    assert.ok(vp.playX >= 0 && vp.playY >= 0, `${w}x${h} negative play offset`);
+    assert.ok(vp.extendedW <= vp.playH * MAX_EXTENDED_ASPECT + 0.05, `${w}x${h} extendedW exceeded 21:9`);
+    assert.ok(vp.playW <= w + 0.01 && vp.playH <= h + 0.01, `${w}x${h} play zone exceeded bounds`);
+  }
+
+  // Ultrawide HUD anchors inside centered 16:9 play zone (not flush against far screen edge)
+  const uwInsets = computeSafeZoneHudInsets(3440, 1440);
+  assert.ok(uwInsets.leftPx > 400, `Expected ultrawide left inset inside play zone, got ${uwInsets.leftPx}`);
+
+  // 2D backing store caps DPR and enforces ~8M pixel ceiling
+  const lowMode = computeCanvas2DBackingSize({
+    cssWidth: 1366,
+    cssHeight: 768,
+    devicePixelRatio: 2,
+    resolvedMode: '3d-light',
+  });
+  assert.equal(lowMode.effectiveDpr, 1);
+
+  const softwareMode = computeCanvas2DBackingSize({
+    cssWidth: 1366,
+    cssHeight: 768,
+    devicePixelRatio: 2,
+    resolvedMode: '2d',
+    isSoftwareRenderer: true,
+  });
+  assert.equal(softwareMode.effectiveDpr, 1);
+
+  const normalRetina = computeCanvas2DBackingSize({
+    cssWidth: 1366,
+    cssHeight: 768,
+    devicePixelRatio: 2,
+    resolvedMode: '2d',
+  });
+  assert.equal(normalRetina.effectiveDpr, 2);
+
+  for (const [w, h] of [
+    [3840, 2160],
+    [5120, 1440],
+  ] as const) {
+    const capped = computeCanvas2DBackingSize({
+      cssWidth: w,
+      cssHeight: h,
+      devicePixelRatio: 2,
+      resolvedMode: '2d',
+    });
+    assert.equal(capped.clampedByPixelBudget, true, `${w}x${h}@2x should clamp to pixel budget`);
+    assert.ok(
+      capped.totalPixels <= MAX_2D_CANVAS_PIXELS,
+      `${w}x${h}@2x pixels ${capped.totalPixels} exceeded ${MAX_2D_CANVAS_PIXELS}`,
+    );
+  }
+
+  // 3D camera framing keeps vertical FOV on wide/ultrawide and pulls back cleanly on tall/portrait
+  const wideProj = computePlayZoneProjection(3440, 1440, 50);
+  assert.equal(wideProj.fov, 50);
+  assert.equal(wideProj.distanceScale, 1);
+
+  const suwProj = computePlayZoneProjection(5120, 1440, 52);
+  assert.equal(suwProj.fov, 52);
+  assert.equal(suwProj.distanceScale, 1);
+
+  const portraitProj = computePlayZoneProjection(1080, 1920, 50);
+  assert.ok(portraitProj.fov > 50 && portraitProj.fov <= 76);
+  assert.ok(portraitProj.distanceScale > 1.2, `Expected portrait pullback > 1.2, got ${portraitProj.distanceScale}`);
+
+  const cam = new THREE.PerspectiveCamera(50, 16 / 9, 0.1, 100);
+  const appliedScale = fitPerspectiveCamera(cam, 1080, 1920, 50);
+  assert.equal(appliedScale, portraitProj.distanceScale);
+  assert.equal(cam.fov, portraitProj.fov);
+});
+
+test('Phase 13D windowBounds handles first-run sizing, multi-monitor restore, and unplugged display clamping', () => {
+  const laptopDisplay = {
+    id: 1,
+    workArea: {x: 0, y: 0, width: 1366, height: 736},
+    scaleFactor: 1,
+  };
+  const ultrawideDisplay = {
+    id: 2,
+    workArea: {x: 1366, y: 0, width: 3440, height: 1400},
+    scaleFactor: 1,
+  };
+
+  // First-run centers ~80% of primary work area and respects 960x600 minimum
+  const firstRun = computeFirstRunBounds(laptopDisplay.workArea);
+  assert.equal(firstRun.width, Math.round(1366 * 0.8));
+  assert.ok(firstRun.width >= MIN_WINDOW_WIDTH);
+  assert.ok(firstRun.height >= MIN_WINDOW_HEIGHT);
+  assert.equal(firstRun.x, Math.round((1366 - firstRun.width) / 2));
+
+  // Tiny display clamps safely down to display work area without throwing
+  const tinyFirst = computeFirstRunBounds({x: 0, y: 0, width: 800, height: 500});
+  assert.equal(tinyFirst.width, 800);
+  assert.equal(tinyFirst.height, 500);
+
+  // Saved window on connected secondary ultrawide stays on ultrawide and keeps flags
+  const onSecond = resolveRestoredWindowBounds(
+    {width: 1800, height: 1000, x: 1900, y: 120, isMaximized: true, isFullScreen: false},
+    [laptopDisplay, ultrawideDisplay],
+    laptopDisplay,
+  );
+  assert.equal(onSecond.x, 1900);
+  assert.equal(onSecond.y, 120);
+  assert.equal(onSecond.isMaximized, true);
+  assert.equal(onSecond.isFullScreen, false);
+
+  // Unplugged ultrawide -> restored window clamps cleanly into primary laptop display
+  const afterUnplug = resolveRestoredWindowBounds(
+    {width: 2200, height: 1100, x: 2400, y: 200, isFullScreen: true},
+    [laptopDisplay],
+    laptopDisplay,
+  );
+  assert.ok(afterUnplug.width <= laptopDisplay.workArea.width);
+  assert.ok(afterUnplug.height <= laptopDisplay.workArea.height);
+  assert.ok(afterUnplug.x >= laptopDisplay.workArea.x);
+  assert.ok(afterUnplug.x + afterUnplug.width <= laptopDisplay.workArea.x + laptopDisplay.workArea.width);
+  assert.ok(afterUnplug.y >= laptopDisplay.workArea.y);
+  assert.ok(afterUnplug.y + afterUnplug.height <= laptopDisplay.workArea.y + laptopDisplay.workArea.height);
+  assert.equal(afterUnplug.isFullScreen, true);
+
+  // Live display removal clamps current bounds onto remaining display
+  const clamped = clampWindowBoundsToDisplays(
+    {x: 3600, y: 300, width: 1200, height: 800},
+    [laptopDisplay],
+    laptopDisplay,
+  );
+  assert.equal(clamped.width, 1200);
+  assert.equal(clamped.height, 736);
+  assert.equal(clamped.x, 166);
+  assert.equal(clamped.y, 0);
+});
+

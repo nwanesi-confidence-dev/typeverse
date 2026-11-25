@@ -2,9 +2,11 @@ import React, {useEffect, useRef} from 'react';
 import {Monitor} from 'lucide-react';
 import {soundEngine} from '@/src/audio/soundEngine';
 import {graphicsModeService, useGraphicsMode} from '@/src/graphics/graphicsModeService';
+import {useScreenInfo} from '@/src/utils/screenInfo';
 
 export const SpeedTestOverlay: React.FC = () => {
   const gfx = useGraphicsMode();
+  const screen = useScreenInfo();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const {running, phase, progressPct} = gfx.speedTestStatus;
 
@@ -29,7 +31,7 @@ export const SpeedTestOverlay: React.FC = () => {
       aria-labelledby="speed-test-title"
     >
       <div
-        className="tv-surface w-full max-w-md rounded-2xl p-6 shadow-2xl space-y-4"
+        className="tv-surface w-[min(100%,28rem)] max-h-[92%] overflow-y-auto rounded-2xl p-5 sm:p-6 shadow-2xl space-y-4"
         style={{borderColor: 'var(--tv-border)'}}
       >
         <div className="flex items-center justify-between gap-3">
@@ -46,7 +48,7 @@ export const SpeedTestOverlay: React.FC = () => {
 
         <div
           ref={containerRef}
-          className="w-full h-44 rounded-xl border overflow-hidden"
+          className={`w-full rounded-xl border overflow-hidden ${screen.height < 660 ? 'h-32' : 'h-44'}`}
           style={{backgroundColor: '#080B14', borderColor: 'var(--tv-border)'}}
           aria-hidden="true"
         />
@@ -64,7 +66,7 @@ export const SpeedTestOverlay: React.FC = () => {
               }}
             />
           </div>
-          <div className="flex items-center justify-between text-xs" style={{color: 'var(--tv-text-muted)'}}>
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs" style={{color: 'var(--tv-text-muted)'}}>
             <span>
               {phase === 'warmup'
                 ? 'Warming up WebGL shaders...'

@@ -4,11 +4,13 @@ import {
   WORD_RAIN_FIELD_HEIGHT,
   WordRainEngine,
 } from '@/src/arcade/engine/wordRainEngine';
+import {CANONICAL_PLAY_WIDTH} from '@/src/arcade/playZone';
 import {
   renderWordRain2D,
   type Ripple2D,
 } from '@/src/arcade/renderer-2d/WordRain2D';
 import {WordRain3D} from '@/src/arcade/renderer-3d/WordRain3D';
+import {useCanvas2DResizeObserver} from '@/src/arcade/usePlayfieldSize';
 import {soundEngine} from '@/src/audio/soundEngine';
 import {
   DIFFICULTY_META,
@@ -40,6 +42,7 @@ export const WordRainGame: React.FC<ArcadeCommonProps> = ({
     lockedMode,
     show3D,
     webgl2Supported,
+    isSoftwareRenderer,
     contextLostOpen,
     webglRetryNonce,
     markContextLost,
@@ -139,10 +142,9 @@ export const WordRainGame: React.FC<ArcadeCommonProps> = ({
 
       if (res.correct) {
         soundEngine.playBubblePop(res.combo);
-        const canvas = canvasRef.current;
-        if (!show3D && canvas && res.clearedEvent) {
+        if (!show3D && res.clearedEvent) {
           ripples2DRef.current.push({
-            x: res.clearedEvent.xNorm * canvas.clientWidth,
+            x: res.clearedEvent.xNorm * CANONICAL_PLAY_WIDTH,
             y: res.clearedEvent.yPx ?? 120,
             radius: 10,
             life: 1,
@@ -178,6 +180,25 @@ export const WordRainGame: React.FC<ArcadeCommonProps> = ({
     };
   }, [lockedMode, show3D, onFinish, onExit]);
 
+  const render2DFrame = useCallback(
+    (dtSec: number) => {
+      if (show3D || !canvasRef.current) return;
+      const eng = engineRef.current;
+      renderWordRain2D({
+        canvas: canvasRef.current,
+        state: eng.state,
+        goal: eng.cfg.goal,
+        ripples: ripples2DRef.current,
+        dtSec,
+        resolvedMode: lockedMode,
+        isSoftwareRenderer,
+      });
+    },
+    [show3D, lockedMode, isSoftwareRenderer],
+  );
+
+  useCanvas2DResizeObserver(canvasRef, !show3D, () => render2DFrame(0));
+
   useEffect(() => {
     let raf = 0;
     let lastTs = performance.now();
@@ -187,18 +208,16 @@ export const WordRainGame: React.FC<ArcadeCommonProps> = ({
       const dt = Math.min(0.05, (now - lastTs) / 1000);
       lastTs = now;
       const eng = engineRef.current;
-      const canvas = canvasRef.current;
 
-      const h = !show3D && canvas ? canvas.clientHeight : WORD_RAIN_FIELD_HEIGHT;
-      const stepRes = eng.step(dt, h, now);
+      const stepRes = eng.step(dt, WORD_RAIN_FIELD_HEIGHT, now);
 
       if (stepRes.missedEvents.length > 0) {
         soundEngine.playHitChime('miss');
-        if (!show3D && canvas) {
+        if (!show3D) {
           for (const ev of stepRes.missedEvents) {
             ripples2DRef.current.push({
-              x: ev.xNorm * canvas.clientWidth,
-              y: h - 26,
+              x: ev.xNorm * CANONICAL_PLAY_WIDTH,
+              y: WORD_RAIN_FIELD_HEIGHT - 26,
               radius: 8,
               life: 1,
               color: '#FB7185',
@@ -215,15 +234,7 @@ export const WordRainGame: React.FC<ArcadeCommonProps> = ({
         });
       }
 
-      if (!show3D && canvas) {
-        renderWordRain2D({
-          canvas,
-          state: eng.state,
-          goal: eng.cfg.goal,
-          ripples: ripples2DRef.current,
-          dtSec: dt,
-        });
-      }
+      render2DFrame(dt);
 
       if (now - lastHud >= 33) {
         lastHud = now;
@@ -243,7 +254,7 @@ export const WordRainGame: React.FC<ArcadeCommonProps> = ({
 
     raf = window.requestAnimationFrame(frame);
     return () => window.cancelAnimationFrame(raf);
-  }, [difficulty, lockedMode, show3D, onFinish, onTelemetry]);
+  }, [difficulty, lockedMode, render2DFrame, show3D, onFinish, onTelemetry]);
 
   const rain3DState: WordRain3DState = useMemo(
     () => ({
@@ -260,18 +271,18 @@ export const WordRainGame: React.FC<ArcadeCommonProps> = ({
   };
 
   return (
-    <div className="tv-surface rounded-2xl p-5 space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="text-xs font-medium flex flex-wrap items-center gap-2" style={{color: 'var(--tv-text-muted)'}}>
-          <span>Word Rain · {DIFFICULTY_META[difficulty].label} · Catch drifting raindrops before they reach the pond (gold drops restore +1 life)</span>
+    <div className="tv-surface rounded-2xl p-3 sm:p-4 flex flex-col gap-2.5 flex-1 min-h-0">
+      <div className="shrink-0 flex flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0 text-xs font-medium flex flex-wrap items-center gap-2" style={{color: 'var(--tv-text-muted)'}}>
+          <span className="truncate">Word Rain · {DIFFICULTY_META[difficulty].label} · Catch drifting raindrops before they reach the pond (gold drops restore +1 life)</span>
           <span
-            className="rounded-md border px-2 py-0.5 text-[11px] font-semibold"
+            className="rounded-md border px-2 py-0.5 text-[11px] font-semibold shrink-0"
             style={{borderColor: 'var(--tv-border)', backgroundColor: 'var(--tv-bg)'}}
           >
             {formatResolvedModeLabel(lockedMode)}
           </span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
             onClick={togglePause}
@@ -306,7 +317,7 @@ export const WordRainGame: React.FC<ArcadeCommonProps> = ({
         />
       )}
 
-      <div className="relative rounded-xl overflow-hidden border" style={{borderColor: 'var(--tv-border)'}}>
+      <div className="relative flex-1 min-h-[200px] rounded-xl overflow-hidden border" style={{borderColor: 'var(--tv-border)'}}>
         {show3D ? (
           <WordRain3D
             gameId="word-rain"
@@ -320,7 +331,7 @@ export const WordRainGame: React.FC<ArcadeCommonProps> = ({
         ) : (
           <canvas
             ref={canvasRef}
-            className="block w-full h-[360px]"
+            className="block w-full h-full"
             aria-label="Word Rain canvas"
           />
         )}

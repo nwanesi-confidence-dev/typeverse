@@ -1,7 +1,9 @@
 import * as THREE from 'three';
+import {DETAIL_CONSTANTS, REALISTIC_VISUAL_TUNING} from '@/src/graphics/detail';
 import {createSceneRenderPipeline} from '@/src/three/bloom';
 import {
   createCappedLoop,
+  createDetailLOD,
   createManagedRenderer,
   fitPerspectiveCamera,
   readThemePalette3D,
@@ -12,6 +14,11 @@ import {
   SCRATCH_VEC3_B,
 } from '@/src/three/core';
 import {WordSpritePool, type PooledWordLabel} from '@/src/three/labelSprites';
+import {createPostPipeline, type ManagedPostPipeline} from '@/src/three/postPipeline';
+import {
+  acquireSessionPbrTextures,
+  releaseSessionPbrTextures,
+} from '@/src/three/proceduralTextures';
 import type {LazyThreeMountContext, LazyThreeSceneHandle} from '@/src/three/ThreeCanvasHost';
 
 export interface WordRainDropSnapshot {
@@ -48,7 +55,7 @@ export interface WordRain3DState {
 
 interface DropVisual {
   group: THREE.Group;
-  dropMesh: THREE.Mesh;
+  dropSpinner: THREE.Object3D;
   haloMesh: THREE.Mesh;
   dropMat: THREE.MeshPhysicalMaterial;
   haloMat: THREE.MeshBasicMaterial;
@@ -65,22 +72,52 @@ interface PooledRipple {
   life: number;
 }
 
-function createTeardropGeometry(): THREE.LatheGeometry {
+function createTeardropGeometry(radialSegments: number, steps: number): THREE.LatheGeometry {
   const pts: THREE.Vector2[] = [];
-  const steps = 14;
   for (let i = 0; i <= steps; i++) {
     const t = i / steps; // 0 = bottom rounded bulb, 1 = top tip
     const y = (t - 0.35) * 1.15;
     const r = Math.sin(Math.pow(t, 0.62) * Math.PI) * 0.42 * (1 - t * 0.38);
     pts.push(new THREE.Vector2(Math.max(0.002, r), y));
   }
-  const geo = new THREE.LatheGeometry(pts, 16);
+  const geo = new THREE.LatheGeometry(pts, radialSegments);
   geo.computeVertexNormals();
   return geo;
 }
 
+function createPondHorizonTexture(accentHex: number, maxAnisotropy: number): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 256;
+  const ctx = canvas.getContext('2d')!;
+  const accentCss = '#' + new THREE.Color(accentHex).getHexString();
+
+  const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+  grad.addColorStop(0, '#040a18');
+  grad.addColorStop(0.65, '#091834');
+  grad.addColorStop(1, '#0d2244');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const glow = ctx.createRadialGradient(256, 210, 20, 256, 210, 240);
+  glow.addColorStop(0, accentCss + '2a');
+  glow.addColorStop(1, 'rgba(7, 18, 38, 0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.generateMipmaps = true;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.anisotropy = Math.max(1, Math.min(8, maxAnisotropy));
+  return tex;
+}
+
 export function mountScene(ctx: LazyThreeMountContext): LazyThreeSceneHandle {
   const palette = readThemePalette3D();
+  const isRealistic = Boolean(ctx.preset.realistic || ctx.preset.mode === '3d-realistic');
+  const consts = DETAIL_CONSTANTS.realistic;
+
   const managed = createManagedRenderer(ctx.container, ctx.preset, {
     alpha: false,
     useEnvironment: true,
@@ -93,55 +130,85 @@ export function mountScene(ctx: LazyThreeMountContext): LazyThreeSceneHandle {
     scene.fog = new THREE.FogExp2(skyColor, 0.038 / Math.max(0.75, ctx.preset.drawDistanceScale));
   }
 
+  const width = Math.max(1, ctx.container.clientWidth);
+  const height = Math.max(1, ctx.container.clientHeight);
   const baseFov = 48;
-  const camera = new THREE.PerspectiveCamera(
-    baseFov,
-    Math.max(1, ctx.container.clientWidth) / Math.max(1, ctx.container.clientHeight),
-    0.2,
-    120,
-  );
-  camera.position.set(0, 1.5, 11.4);
-  camera.lookAt(0, -0.35, -3.5);
-  fitPerspectiveCamera(
-    camera,
-    ctx.container.clientWidth,
-    ctx.container.clientHeight,
-    baseFov,
-  );
+  const camera = new THREE.PerspectiveCamera(baseFov, width / height, 0.2, 160);
+  const applyCameraFraming = (w: number, h: number) => {
+    const distScale = fitPerspectiveCamera(camera, w, h, baseFov);
+    camera.position.set(0, -0.35 + 1.85 * Math.sqrt(distScale), -3.5 + 14.9 * distScale);
+    camera.lookAt(0, -0.35, -3.5);
+  };
+  applyCameraFraming(width, height);
 
   // Tranquil Rain Pond 3-light rig
-  const hemi = new THREE.HemisphereLight(0x7dd3fc, 0x0b172c, 0.78);
+  const hemi = new THREE.HemisphereLight(0x7dd3fc, 0x0b172c, isRealistic ? 0.88 : 0.78);
   scene.add(hemi);
 
-  const keyLight = new THREE.DirectionalLight(0xe0f2fe, 1.35);
+  const keyLight = new THREE.DirectionalLight(0xe0f2fe, isRealistic ? 1.75 : 1.35);
   keyLight.position.set(8, 16, 10);
   if (ctx.preset.shadows) {
     keyLight.castShadow = true;
-    keyLight.shadow.mapSize.set(1024, 1024);
-    keyLight.shadow.bias = -0.0005;
+    const shadowSize = isRealistic ? REALISTIC_VISUAL_TUNING.shadowMapSize : 1024;
+    keyLight.shadow.mapSize.set(shadowSize, shadowSize);
+    if (isRealistic) {
+      keyLight.shadow.camera.near = 2;
+      keyLight.shadow.camera.far = 45;
+      keyLight.shadow.camera.left = -12;
+      keyLight.shadow.camera.right = 12;
+      keyLight.shadow.camera.top = 10;
+      keyLight.shadow.camera.bottom = -10;
+      keyLight.shadow.normalBias = 0.025;
+    }
+    keyLight.shadow.bias = -0.0004;
   }
   scene.add(keyLight);
 
-  const pondGlow = new THREE.PointLight(0x38bdf8, 1.9, 24, 1.6);
+  const pondGlow = new THREE.PointLight(0x38bdf8, isRealistic ? 2.4 : 1.9, 24, 1.6);
   pondGlow.position.set(0, 0.4, -2);
   scene.add(pondGlow);
 
+  // Subtle Distant Rain Horizon Mist (Realistic, widened for 32:9 ultrawide)
+  let horizonTex: THREE.CanvasTexture | null = null;
+  if (isRealistic) {
+    const maxAniso = renderer.capabilities.getMaxAnisotropy?.() ?? 4;
+    horizonTex = createPondHorizonTexture(palette.accent, maxAniso);
+    const mistGeo = new THREE.PlaneGeometry(130, 30);
+    const mistMat = new THREE.MeshBasicMaterial({
+      map: horizonTex,
+      fog: true,
+      depthWrite: false,
+    });
+    const mistPlane = new THREE.Mesh(mistGeo, mistMat);
+    mistPlane.position.set(0, 2.2, -16.5);
+    scene.add(mistPlane);
+  }
+
   // 1. Dark Pond Surface & Horizon Rings
-  const pondGeo = new THREE.PlaneGeometry(76, 48);
+  const pondGeo = isRealistic
+    ? new THREE.PlaneGeometry(165, 58, 48, 24)
+    : new THREE.PlaneGeometry(165, 58);
   pondGeo.rotateX(-Math.PI / 2);
+  if (isRealistic) {
+    const uv = pondGeo.attributes.uv as THREE.BufferAttribute;
+    for (let i = 0; i < uv.count; i++) {
+      uv.setXY(i, uv.getX(i) * 16, uv.getY(i) * 6);
+    }
+    uv.needsUpdate = true;
+  }
   const pondMat = new THREE.MeshPhysicalMaterial({
     color: 0x081a33,
-    roughness: 0.14,
-    metalness: 0.42,
-    clearcoat: 0.85,
-    clearcoatRoughness: 0.12,
+    roughness: isRealistic ? 0.09 : 0.14,
+    metalness: isRealistic ? 0.54 : 0.42,
+    clearcoat: isRealistic ? 1.0 : 0.85,
+    clearcoatRoughness: isRealistic ? 0.06 : 0.12,
   });
   const pond = new THREE.Mesh(pondGeo, pondMat);
   pond.position.set(0, -2.15, -6);
   pond.receiveShadow = ctx.preset.shadows;
   scene.add(pond);
 
-  const waterlineGeo = new THREE.BoxGeometry(14.5, 0.05, 0.08);
+  const waterlineGeo = new THREE.BoxGeometry(13.8, 0.05, 0.08);
   const waterlineMat = new THREE.MeshStandardMaterial({
     color: 0x38bdf8,
     emissive: 0x38bdf8,
@@ -153,9 +220,9 @@ export function mountScene(ctx: LazyThreeMountContext): LazyThreeSceneHandle {
   waterline.position.set(0, -2.08, -1.6);
   scene.add(waterline);
 
-  // 2. InstancedMesh Ambient Rain Streaks across Depth Lanes
-  const streakCount = ctx.preset.tier === 'low' ? 60 : 120;
-  const streakGeo = new THREE.CylinderGeometry(0.015, 0.015, 0.68, 4);
+  // 2. InstancedMesh Ambient Rain Streaks across Depth Lanes & Full Width
+  const streakCount = ctx.preset.tier === 'low' ? 72 : isRealistic ? 210 : 150;
+  const streakGeo = new THREE.CylinderGeometry(0.015, 0.015, 0.68, isRealistic ? 8 : 4);
   const streakMat = new THREE.MeshBasicMaterial({
     color: 0x7dd3fc,
     transparent: true,
@@ -165,16 +232,21 @@ export function mountScene(ctx: LazyThreeMountContext): LazyThreeSceneHandle {
   streakInstanced.frustumCulled = false;
   const streakData = new Float32Array(streakCount * 4); // x, y, z, speed
   for (let i = 0; i < streakCount; i++) {
-    streakData[i * 4 + 0] = (((i * 53) % 100) / 100 - 0.5) * 20;
+    streakData[i * 4 + 0] = (((i * 53) % 100) / 100 - 0.5) * 56;
     streakData[i * 4 + 1] = (((i * 31) % 100) / 100) * 8 - 2;
     streakData[i * 4 + 2] = -14 + ((i * 17) % 18);
     streakData[i * 4 + 3] = 5.5 + (i % 5) * 1.1;
   }
   scene.add(streakInstanced);
 
-  // 3. Pooled Word Raindrops + Cached Sprite Badges
-  const teardropGeo = createTeardropGeometry();
-  const haloGeo = new THREE.TorusGeometry(0.58, 0.04, 8, 24);
+  // 3. Pooled Word Raindrops + Cached Sprite Badges (128-seg Lathe + LOD at Realistic)
+  const teardropGeo = isRealistic
+    ? createTeardropGeometry(consts.latheSegments, 24)
+    : createTeardropGeometry(16, 14);
+  const farTeardropGeo = isRealistic ? createTeardropGeometry(24, 14) : null;
+  const haloGeo = isRealistic
+    ? new THREE.TorusGeometry(0.58, 0.04, 14, consts.sphereSegments)
+    : new THREE.TorusGeometry(0.58, 0.04, 8, 24);
   haloGeo.rotateX(Math.PI / 2);
 
   const wordSprites = new WordSpritePool(10, 20);
@@ -186,15 +258,32 @@ export function mountScene(ctx: LazyThreeMountContext): LazyThreeSceneHandle {
       color: 0x38bdf8,
       emissive: 0x0284c7,
       emissiveIntensity: 0.45,
-      roughness: 0.1,
-      metalness: 0.15,
+      roughness: isRealistic ? 0.05 : 0.1,
+      metalness: isRealistic ? 0.12 : 0.15,
       clearcoat: 1.0,
+      clearcoatRoughness: 0.04,
+      iridescence: isRealistic ? 0.72 : 0,
+      iridescenceIOR: 1.33,
       transparent: true,
-      opacity: 0.88,
+      opacity: isRealistic ? 0.84 : 0.88,
     });
-    const dropMesh = new THREE.Mesh(teardropGeo, dropMat);
-    dropMesh.castShadow = ctx.preset.shadows;
-    group.add(dropMesh);
+
+    let dropSpinner: THREE.Object3D;
+    if (isRealistic && farTeardropGeo) {
+      const highDrop = new THREE.Mesh(teardropGeo, dropMat);
+      highDrop.castShadow = ctx.preset.shadows;
+      const farDrop = new THREE.Mesh(farTeardropGeo, dropMat);
+      farDrop.castShadow = ctx.preset.shadows;
+      dropSpinner = createDetailLOD([
+        {object: highDrop, distance: 0},
+        {object: farDrop, distance: 14},
+      ]);
+    } else {
+      const dropMesh = new THREE.Mesh(teardropGeo, dropMat);
+      dropMesh.castShadow = ctx.preset.shadows;
+      dropSpinner = dropMesh;
+    }
+    group.add(dropSpinner);
 
     const haloMat = new THREE.MeshBasicMaterial({
       color: 0x22d3ee,
@@ -209,7 +298,7 @@ export function mountScene(ctx: LazyThreeMountContext): LazyThreeSceneHandle {
     scene.add(group);
     return {
       group,
-      dropMesh,
+      dropSpinner,
       haloMesh,
       dropMat,
       haloMat,
@@ -221,7 +310,7 @@ export function mountScene(ctx: LazyThreeMountContext): LazyThreeSceneHandle {
   });
 
   // 4. Pooled Pond Splash Ripples
-  const rippleGeo = new THREE.RingGeometry(0.28, 0.42, 24);
+  const rippleGeo = new THREE.RingGeometry(0.28, 0.42, isRealistic ? 48 : 24);
   rippleGeo.rotateX(-Math.PI / 2);
   const ripplePool: PooledRipple[] = Array.from({length: 10}, () => {
     const mat = new THREE.MeshBasicMaterial({
@@ -239,14 +328,46 @@ export function mountScene(ctx: LazyThreeMountContext): LazyThreeSceneHandle {
   });
   let rippleCursor = 0;
 
+  let disposed = false;
+  let acquiredPbrSize: 512 | 1024 | null = null;
+  if (isRealistic) {
+    void acquireSessionPbrTextures(renderer, 1024).then((pbr) => {
+      if (disposed) {
+        releaseSessionPbrTextures(pbr.sizeTier);
+        return;
+      }
+      acquiredPbrSize = pbr.sizeTier;
+      pondMat.normalMap = pbr.metalNormal;
+      pondMat.normalScale.set(0.08, 0.08);
+      pondMat.roughnessMap = pbr.metalRoughness;
+      pondMat.needsUpdate = true;
+    });
+  }
+
   const accentCss = '#' + new THREE.Color(palette.accent).getHexString();
   let externalState: WordRain3DState | null = null;
 
-  const pipeline = createSceneRenderPipeline(renderer, scene, camera, ctx.preset, ctx.probe, {
-    strength: 0.3,
-    radius: 0.35,
-    threshold: 0.86,
-  });
+  let legacyPipeline: ReturnType<typeof createSceneRenderPipeline> | null = null;
+  let realisticPost: ManagedPostPipeline | null = null;
+
+  if (isRealistic) {
+    if (ctx.preset.postEffects) {
+      realisticPost = createPostPipeline(renderer, scene, camera, {
+        width,
+        height,
+        pixelRatio: managed.pixelRatio,
+        multisampleSamples: ctx.preset.multisampleSamples,
+        enableBloom: true,
+        enableVignette: true,
+      });
+    }
+  } else {
+    legacyPipeline = createSceneRenderPipeline(renderer, scene, camera, ctx.preset, ctx.probe, {
+      strength: 0.3,
+      radius: 0.35,
+      threshold: 0.86,
+    });
+  }
 
   if (!ctx.probe.isSoftwareGl) {
     renderer.compile(scene, camera);
@@ -324,7 +445,7 @@ export function mountScene(ctx: LazyThreeMountContext): LazyThreeSceneHandle {
       }
 
       if (!ctx.calmMode && !snap?.paused) {
-        slot.dropMesh.rotation.y = elapsedSec * 1.4 + drop.id;
+        slot.dropSpinner.rotation.y = elapsedSec * 1.4 + drop.id;
       }
 
       if (slot.badge) {
@@ -367,7 +488,13 @@ export function mountScene(ctx: LazyThreeMountContext): LazyThreeSceneHandle {
       }
     }
 
-    pipeline.render();
+    if (realisticPost) {
+      realisticPost.render(dtSec);
+    } else if (legacyPipeline) {
+      legacyPipeline.render();
+    } else {
+      renderer.render(scene, camera);
+    }
   };
 
   const loop = createCappedLoop({
@@ -389,14 +516,32 @@ export function mountScene(ctx: LazyThreeMountContext): LazyThreeSceneHandle {
           : ctx.preset.sceneFrameCap,
       );
     },
-    resize(width: number, height: number) {
-      managed.resize(width, height, camera, baseFov);
-      pipeline.resize(width, height);
+    resize(w: number, h: number) {
+      managed.resize(w, h, camera, baseFov);
+      applyCameraFraming(w, h);
+      legacyPipeline?.resize(w, h);
+      realisticPost?.setSize(w, h, managed.pixelRatio);
     },
     dispose() {
+      disposed = true;
       loop.stop();
       wordSprites.dispose();
-      pipeline.dispose();
+      if (legacyPipeline) {
+        legacyPipeline.dispose();
+        legacyPipeline = null;
+      }
+      if (realisticPost) {
+        realisticPost.dispose();
+        realisticPost = null;
+      }
+      if (horizonTex) {
+        horizonTex.dispose();
+        horizonTex = null;
+      }
+      if (acquiredPbrSize) {
+        releaseSessionPbrTextures(acquiredPbrSize);
+        acquiredPbrSize = null;
+      }
       managed.dispose();
     },
   };

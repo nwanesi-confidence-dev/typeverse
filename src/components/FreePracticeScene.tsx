@@ -9,6 +9,11 @@ import {
   SlidersHorizontal,
 } from 'lucide-react';
 import {soundEngine} from '@/src/audio/soundEngine';
+import {AdaptiveSceneLayout} from '@/src/components/AdaptiveSceneLayout';
+import {
+  CompactKeyHeatmapPanel,
+  LiveSessionStatsPanel,
+} from '@/src/components/LiveSessionSidePanels';
 import {SessionResults} from '@/src/components/SessionResults';
 import {TypingArena} from '@/src/components/TypingArena';
 import {VirtualKeyboard} from '@/src/components/VirtualKeyboard';
@@ -34,7 +39,8 @@ import {
   markFreshPacksUsed,
   maybePrefetchFreshPack,
 } from '@/src/utils/freshWordsClient';
-import {recordSessionAndBadges} from '@/src/utils/progression';
+import {getTodayActivitySeconds, recordSessionAndBadges} from '@/src/utils/progression';
+import {useScreenInfo} from '@/src/utils/screenInfo';
 
 interface FreePracticeSceneProps {
   onBack: () => void;
@@ -113,6 +119,8 @@ export const FreePracticeScene: React.FC<FreePracticeSceneProps> = ({
   activeProfileId,
 }) => {
   const {settings, updateSetting, copy} = useAppearance();
+  const screen = useScreenInfo();
+  const [setupDrawerOpen, setSetupDrawerOpen] = useState(false);
   const [sourceMode, setSourceMode] = useState<'bank' | 'custom'>('bank');
   const [contentKind, setContentKind] = useState<ContentKind>('sentences');
   const [theme, setTheme] = useState<ContentTheme | 'All'>('All');
@@ -352,123 +360,62 @@ export const FreePracticeScene: React.FC<FreePracticeSceneProps> = ({
 
   const isFocus = settings.layout === 'focus';
 
-  return (
-    <main className="mx-auto max-w-[1320px] px-4 py-6 sm:px-6 space-y-5">
-      {!isFocus && (
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="space-y-1">
-            <button
-              type="button"
-              onClick={onBack}
-              className="inline-flex items-center gap-1.5 text-xs font-medium hover:opacity-80"
-              style={{color: 'var(--tv-accent)'}}
-            >
-              <ArrowLeft className="w-3.5 h-3.5" aria-hidden="true" />
-              <span>Back to Hub (Esc)</span>
-            </button>
-            <div className="flex flex-wrap items-baseline gap-3">
-              <h1 className="font-display text-3xl font-bold tracking-tight">
-                Free {copy('practise')}
-              </h1>
-              {usedFreshPack && sourceMode === 'bank' && (
-                <span className="text-xs font-medium" style={{color: 'var(--tv-success)'}}>
-                  Using Word Pack
-                </span>
-              )}
-            </div>
-            <p className="text-sm" style={{color: 'var(--tv-text-muted)'}}>
-              Drill specific key rows, explore themed packs, or paste any custom text without countdown pressure.
-            </p>
-          </div>
+  const handleToggleHeatmapKey = (k: string) => {
+    soundEngine.playUiTap();
+    setSourceMode('bank');
+    setFocusPresetId('custom');
+    setCustomFocusInput((prev) => {
+      const normalized = prev.toLowerCase();
+      return normalized.includes(k)
+        ? normalized.replace(k, '')
+        : `${normalized}${k}`.slice(-8);
+    });
+  };
 
-          <div className="flex flex-wrap items-center gap-2">
-            <div
-              className="flex items-center gap-1 rounded-xl border p-1"
-              style={{backgroundColor: 'var(--tv-surface)', borderColor: 'var(--tv-border)'}}
-            >
-              <button
-                type="button"
-                onClick={() => {
-                  soundEngine.playUiTap();
-                  setSourceMode('bank');
-                }}
-                className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors"
-                style={{
-                  backgroundColor:
-                    sourceMode === 'bank' ? 'var(--tv-accent)' : 'transparent',
-                  color:
-                    sourceMode === 'bank' ? 'var(--tv-accent-fg)' : 'var(--tv-text-muted)',
-                }}
-              >
-                <SlidersHorizontal className="w-3.5 h-3.5" aria-hidden="true" />
-                <span>Packs & Focus Keys</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  soundEngine.playUiTap();
-                  setSourceMode('custom');
-                }}
-                className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors"
-                style={{
-                  backgroundColor:
-                    sourceMode === 'custom' ? 'var(--tv-accent)' : 'transparent',
-                  color:
-                    sourceMode === 'custom' ? 'var(--tv-accent-fg)' : 'var(--tv-text-muted)',
-                }}
-              >
-                <FileText className="w-3.5 h-3.5" aria-hidden="true" />
-                <span>Custom Text</span>
-              </button>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => {
-                soundEngine.playUiTap();
-                updateSetting('keyboardVisible', !settings.keyboardVisible);
-              }}
-              className="inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-medium"
-              style={{
-                borderColor: 'var(--tv-border)',
-                backgroundColor: 'var(--tv-surface)',
-                color: 'var(--tv-text)',
-              }}
-            >
-              {settings.keyboardVisible ? (
-                <EyeOff className="w-3.5 h-3.5" aria-hidden="true" />
-              ) : (
-                <Eye className="w-3.5 h-3.5" aria-hidden="true" />
-              )}
-              <span>{settings.keyboardVisible ? 'Hide Keyboard' : 'Show Keyboard'}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                soundEngine.playUiTap();
-                setRunSeed((s) => s + 1);
-              }}
-              className="inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-medium"
-              style={{
-                borderColor: 'var(--tv-border)',
-                backgroundColor: 'var(--tv-surface)',
-              }}
-            >
-              <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />
-              <span>Shuffle</span>
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Configuration Controls */}
-      {!isFocus && !results && sourceMode === 'bank' && (
-        <section
-          className="tv-surface rounded-2xl p-4 space-y-3"
-          aria-label="Practice configuration"
+  const practiceConfigPanel = (
+    <section
+      className="tv-surface rounded-2xl p-4 space-y-3"
+      aria-label="Practice configuration"
+    >
+      <div
+        className="flex items-center gap-1 rounded-xl border p-1"
+        style={{backgroundColor: 'var(--tv-bg)', borderColor: 'var(--tv-border)'}}
+      >
+        <button
+          type="button"
+          onClick={() => {
+            soundEngine.playUiTap();
+            setSourceMode('bank');
+          }}
+          className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors"
+          style={{
+            backgroundColor: sourceMode === 'bank' ? 'var(--tv-accent)' : 'transparent',
+            color: sourceMode === 'bank' ? 'var(--tv-accent-fg)' : 'var(--tv-text-muted)',
+          }}
         >
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+          <SlidersHorizontal className="w-3.5 h-3.5" aria-hidden="true" />
+          <span>Packs & Focus</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            soundEngine.playUiTap();
+            setSourceMode('custom');
+          }}
+          className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors"
+          style={{
+            backgroundColor: sourceMode === 'custom' ? 'var(--tv-accent)' : 'transparent',
+            color: sourceMode === 'custom' ? 'var(--tv-accent-fg)' : 'var(--tv-text-muted)',
+          }}
+        >
+          <FileText className="w-3.5 h-3.5" aria-hidden="true" />
+          <span>Custom Text</span>
+        </button>
+      </div>
+
+      {sourceMode === 'bank' ? (
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-2.5">
             <label className="space-y-1 text-xs">
               <span style={{color: 'var(--tv-text-muted)'}}>Content Kind</span>
               <select
@@ -477,7 +424,7 @@ export const FreePracticeScene: React.FC<FreePracticeSceneProps> = ({
                   soundEngine.playUiTap();
                   setContentKind(e.target.value as ContentKind);
                 }}
-                className="w-full rounded-xl border px-3 py-2 text-xs font-medium"
+                className="w-full rounded-xl border px-2.5 py-1.5 text-xs font-medium"
                 style={{
                   backgroundColor: 'var(--tv-bg)',
                   borderColor: 'var(--tv-border)',
@@ -500,7 +447,7 @@ export const FreePracticeScene: React.FC<FreePracticeSceneProps> = ({
                   soundEngine.playUiTap();
                   setTheme(e.target.value as ContentTheme | 'All');
                 }}
-                className="w-full rounded-xl border px-3 py-2 text-xs font-medium"
+                className="w-full rounded-xl border px-2.5 py-1.5 text-xs font-medium"
                 style={{
                   backgroundColor: 'var(--tv-bg)',
                   borderColor: 'var(--tv-border)',
@@ -516,38 +463,38 @@ export const FreePracticeScene: React.FC<FreePracticeSceneProps> = ({
             </label>
 
             <label className="space-y-1 text-xs">
-              <span style={{color: 'var(--tv-text-muted)'}}>Difficulty Tier</span>
+              <span style={{color: 'var(--tv-text-muted)'}}>Difficulty</span>
               <select
                 value={tier}
                 onChange={(e) => {
                   soundEngine.playUiTap();
                   setTier(Number(e.target.value) as WordDifficultyTier | 0);
                 }}
-                className="w-full rounded-xl border px-3 py-2 text-xs font-medium"
+                className="w-full rounded-xl border px-2.5 py-1.5 text-xs font-medium"
                 style={{
                   backgroundColor: 'var(--tv-bg)',
                   borderColor: 'var(--tv-border)',
                   color: 'var(--tv-text)',
                 }}
               >
-                <option value={0}>Mixed Difficulty</option>
-                <option value={1}>Tier 1 (Foundations)</option>
-                <option value={2}>Tier 2 (Everyday)</option>
-                <option value={3}>Tier 3 (Intermediate)</option>
-                <option value={4}>Tier 4 (Advanced)</option>
-                <option value={5}>Tier 5 (Mastery)</option>
+                <option value={0}>Mixed Tier</option>
+                <option value={1}>Tier 1</option>
+                <option value={2}>Tier 2</option>
+                <option value={3}>Tier 3</option>
+                <option value={4}>Tier 4</option>
+                <option value={5}>Tier 5</option>
               </select>
             </label>
 
             <label className="space-y-1 text-xs">
-              <span style={{color: 'var(--tv-text-muted)'}}>Target Length</span>
+              <span style={{color: 'var(--tv-text-muted)'}}>Length</span>
               <select
                 value={wordTarget}
                 onChange={(e) => {
                   soundEngine.playUiTap();
                   setWordTarget(Number(e.target.value));
                 }}
-                className="w-full rounded-xl border px-3 py-2 text-xs font-medium"
+                className="w-full rounded-xl border px-2.5 py-1.5 text-xs font-medium"
                 style={{
                   backgroundColor: 'var(--tv-bg)',
                   borderColor: 'var(--tv-border)',
@@ -562,15 +509,12 @@ export const FreePracticeScene: React.FC<FreePracticeSceneProps> = ({
             </label>
           </div>
 
-          <div
-            className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t"
-            style={{borderColor: 'var(--tv-border)'}}
-          >
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="inline-flex items-center gap-1 text-xs font-medium mr-1" style={{color: 'var(--tv-text-muted)'}}>
-                <Keyboard className="w-3.5 h-3.5" aria-hidden="true" />
-                <span>Focus Keys:</span>
-              </span>
+          <div className="space-y-2 pt-2 border-t" style={{borderColor: 'var(--tv-border)'}}>
+            <div className="flex items-center gap-1 text-xs font-medium" style={{color: 'var(--tv-text-muted)'}}>
+              <Keyboard className="w-3.5 h-3.5" aria-hidden="true" />
+              <span>Focus Keys</span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
               {KEY_PRESETS.map((preset) => {
                 const active = focusPresetId === preset.id;
                 return (
@@ -582,14 +526,10 @@ export const FreePracticeScene: React.FC<FreePracticeSceneProps> = ({
                       setFocusPresetId(preset.id);
                       setCustomFocusInput(preset.keys);
                     }}
-                    className="rounded-lg px-2.5 py-1 text-xs font-medium whitespace-nowrap transition-colors"
+                    className="rounded-lg px-2 py-1 text-[11px] font-medium whitespace-nowrap transition-colors"
                     style={{
-                      backgroundColor: active
-                        ? 'var(--tv-accent)'
-                        : 'var(--tv-bg)',
-                      color: active
-                        ? 'var(--tv-accent-fg)'
-                        : 'var(--tv-text-muted)',
+                      backgroundColor: active ? 'var(--tv-accent)' : 'var(--tv-bg)',
+                      color: active ? 'var(--tv-accent-fg)' : 'var(--tv-text-muted)',
                       border: `1px solid ${active ? 'var(--tv-accent)' : 'var(--tv-border)'}`,
                     }}
                   >
@@ -598,8 +538,7 @@ export const FreePracticeScene: React.FC<FreePracticeSceneProps> = ({
                 );
               })}
             </div>
-
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 pt-1">
               <label htmlFor="custom-focus-keys" className="text-xs whitespace-nowrap" style={{color: 'var(--tv-text-muted)'}}>
                 Custom keys:
               </label>
@@ -612,7 +551,7 @@ export const FreePracticeScene: React.FC<FreePracticeSceneProps> = ({
                   setCustomFocusInput(e.target.value);
                 }}
                 placeholder="e.g. asdfjkl"
-                className="font-typing w-36 rounded-lg border px-2.5 py-1 text-xs"
+                className="font-typing flex-1 min-w-0 rounded-lg border px-2.5 py-1 text-xs"
                 style={{
                   backgroundColor: 'var(--tv-bg)',
                   borderColor: 'var(--tv-border)',
@@ -621,62 +560,190 @@ export const FreePracticeScene: React.FC<FreePracticeSceneProps> = ({
               />
             </div>
           </div>
-        </section>
-      )}
-
-      {/* Custom Text Input */}
-      {!isFocus && !results && sourceMode === 'custom' && (
-        <section
-          className="tv-surface rounded-2xl p-4 space-y-3"
-          aria-label="Custom practice text"
-        >
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <label htmlFor="free-custom-textarea" className="text-xs font-semibold">
-              Paste or type your own passage (normalised to printable ASCII)
+        </div>
+      ) : (
+        <div className="space-y-2.5">
+          <div className="flex items-center justify-between gap-2 text-xs">
+            <label htmlFor="free-custom-textarea" className="font-semibold">
+              Paste custom passage
             </label>
-            <span className="font-typing text-xs tabular-nums" style={{color: 'var(--tv-text-muted)'}}>
-              {customDraft.length}/4000 chars
+            <span className="font-typing tabular-nums" style={{color: 'var(--tv-text-muted)'}}>
+              {customDraft.length}/4000
             </span>
           </div>
           <textarea
             id="free-custom-textarea"
-            rows={3}
+            rows={4}
             value={customDraft}
             onChange={(e) => setCustomDraft(e.target.value)}
-            className="font-typing w-full rounded-xl border p-3 text-sm leading-relaxed"
+            className="font-typing w-full rounded-xl border p-2.5 text-xs leading-relaxed"
             style={{
               backgroundColor: 'var(--tv-bg)',
               borderColor: 'var(--tv-border)',
               color: 'var(--tv-text)',
             }}
           />
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="text-xs" style={{color: customNotice ? 'var(--tv-error)' : 'var(--tv-text-muted)'}}>
-              {customNotice ?? 'Press Apply to load your text into the arena below.'}
-            </span>
-            <button
-              type="button"
-              onClick={handleApplyCustom}
-              className="rounded-xl px-4 py-2 text-xs font-semibold"
-              style={{
-                backgroundColor: 'var(--tv-accent)',
-                color: 'var(--tv-accent-fg)',
-              }}
-            >
-              Apply Custom Text
-            </button>
-          </div>
-        </section>
+          {customNotice && (
+            <p className="text-xs" style={{color: 'var(--tv-error)'}}>
+              {customNotice}
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              handleApplyCustom();
+              setSetupDrawerOpen(false);
+            }}
+            className="w-full rounded-xl px-4 py-2 text-xs font-semibold"
+            style={{
+              backgroundColor: 'var(--tv-accent)',
+              color: 'var(--tv-accent-fg)',
+            }}
+          >
+            Apply Custom Text
+          </button>
+        </div>
       )}
+    </section>
+  );
 
-      {/* Live WPM Meter HUD */}
-      <WpmHud
-        telemetry={telemetry}
-        personalBestWpm={progress?.bestWpm ?? 0}
-        targetWpm={progress?.targetWpm ?? 60}
-      />
+  const activeModeBadge =
+    sourceMode === 'custom'
+      ? 'Custom Text'
+      : parsedFocusKeys.length > 0
+        ? `Focus: ${parsedFocusKeys.slice(0, 8).join('').toUpperCase()}`
+        : `${contentKind} · ${theme}`;
 
-      {/* Arena OR Results */}
+  return (
+    <AdaptiveSceneLayout
+      playLocked={!results}
+      drawerOpen={setupDrawerOpen}
+      drawerTitle={`Free ${copy('practise')} Setup`}
+      onCloseDrawer={() => setSetupDrawerOpen(false)}
+      drawerContent={
+        <>
+          {practiceConfigPanel}
+          <CompactKeyHeatmapPanel
+            keyMetrics={progress?.keyMetrics ?? {}}
+            selectedKeys={parsedFocusKeys}
+            onToggleKey={handleToggleHeatmapKey}
+          />
+        </>
+      }
+      topBar={
+        !isFocus ? (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-3 min-w-0">
+              <button
+                type="button"
+                onClick={onBack}
+                className="inline-flex items-center gap-1.5 text-xs font-medium hover:opacity-80 shrink-0"
+                style={{color: 'var(--tv-accent)'}}
+              >
+                <ArrowLeft className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>Hub (Esc)</span>
+              </button>
+              <h1
+                className="font-display font-bold tracking-tight truncate"
+                style={{fontSize: 'var(--tv-text-xl)'}}
+              >
+                Free {copy('practise')}
+              </h1>
+              {usedFreshPack && sourceMode === 'bank' && (
+                <span className="text-xs font-medium" style={{color: 'var(--tv-success)'}}>
+                  Word Pack
+                </span>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              {!screen.showSidePanels && !results && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundEngine.playUiTap();
+                    setSetupDrawerOpen(true);
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-medium"
+                  style={{
+                    borderColor: 'var(--tv-accent)',
+                    backgroundColor: 'var(--tv-surface)',
+                    color: 'var(--tv-text)',
+                  }}
+                >
+                  <SlidersHorizontal className="w-3.5 h-3.5" style={{color: 'var(--tv-accent)'}} aria-hidden="true" />
+                  <span>Setup ({activeModeBadge})</span>
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => {
+                  soundEngine.playUiTap();
+                  updateSetting('keyboardVisible', !settings.keyboardVisible);
+                }}
+                className="inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-medium"
+                style={{
+                  borderColor: 'var(--tv-border)',
+                  backgroundColor: 'var(--tv-surface)',
+                  color: 'var(--tv-text)',
+                }}
+              >
+                {settings.keyboardVisible ? (
+                  <EyeOff className="w-3.5 h-3.5" aria-hidden="true" />
+                ) : (
+                  <Eye className="w-3.5 h-3.5" aria-hidden="true" />
+                )}
+                <span>{settings.keyboardVisible ? 'Hide Keyboard' : 'Show Keyboard'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  soundEngine.playUiTap();
+                  setRunSeed((s) => s + 1);
+                }}
+                className="inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-medium"
+                style={{
+                  borderColor: 'var(--tv-border)',
+                  backgroundColor: 'var(--tv-surface)',
+                }}
+              >
+                <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>Shuffle</span>
+              </button>
+            </div>
+          </div>
+        ) : undefined
+      }
+      leftPanel={!isFocus && !results ? practiceConfigPanel : undefined}
+      rightPanel={
+        !isFocus ? (
+          <>
+            <LiveSessionStatsPanel telemetry={telemetry} progress={progress} modeFilter="free-practice" />
+            <CompactKeyHeatmapPanel
+              keyMetrics={progress?.keyMetrics ?? {}}
+              selectedKeys={parsedFocusKeys}
+              onToggleKey={handleToggleHeatmapKey}
+            />
+          </>
+        ) : undefined
+      }
+      hud={
+        <WpmHud
+          telemetry={telemetry}
+          personalBestWpm={progress?.bestWpm ?? 0}
+          targetWpm={progress?.targetWpm ?? 60}
+          dailyGoalMinutes={progress?.dailyGoalMinutes ?? 15}
+          todayActivitySeconds={getTodayActivitySeconds(progress)}
+        />
+      }
+      belowMain={
+        !results && passage && settings.keyboardVisible ? (
+          <VirtualKeyboard nextChar={telemetry.nextChar} />
+        ) : undefined
+      }
+    >
       {results ? (
         <SessionResults
           stats={results}
@@ -703,34 +770,22 @@ export const FreePracticeScene: React.FC<FreePracticeSceneProps> = ({
         />
       ) : (
         passage && (
-          <div className="space-y-4">
-            <TypingArena
-              key={`fp-${sourceMode}-${runSeed}-${passage.slice(0, 20)}`}
-              text={passage}
-              timeLimitSec={null}
-              personalBestWpm={progress?.bestWpm ?? 0}
-              targetWpm={progress?.targetWpm ?? 60}
-              modeLabel={
-                sourceMode === 'custom'
-                  ? 'Custom Text'
-                  : parsedFocusKeys.length > 0
-                    ? `Focus: ${parsedFocusKeys.slice(0, 12).join('').toUpperCase()}`
-                    : `${contentKind} · ${theme}`
-              }
-              onTelemetry={setTelemetry}
-              onComplete={(s) => void handleComplete(s)}
-              onRestart={() => {
-                soundEngine.playUiTap();
-                void buildPracticePassage();
-              }}
-            />
-
-            {settings.keyboardVisible && (
-              <VirtualKeyboard nextChar={telemetry.nextChar} />
-            )}
-          </div>
+          <TypingArena
+            key={`fp-${sourceMode}-${runSeed}-${passage.slice(0, 20)}`}
+            text={passage}
+            timeLimitSec={null}
+            personalBestWpm={progress?.bestWpm ?? 0}
+            targetWpm={progress?.targetWpm ?? 60}
+            modeLabel={activeModeBadge}
+            onTelemetry={setTelemetry}
+            onComplete={(s) => void handleComplete(s)}
+            onRestart={() => {
+              soundEngine.playUiTap();
+              void buildPracticePassage();
+            }}
+          />
         )
       )}
-    </main>
+    </AdaptiveSceneLayout>
   );
 };

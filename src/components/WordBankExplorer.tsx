@@ -9,6 +9,7 @@ import type {
   WordBankEntry,
   WordDifficultyTier,
 } from '@/src/types/app';
+import {useScreenInfo} from '@/src/utils/screenInfo';
 
 interface WordBankExplorerProps {
   onBack: () => void;
@@ -37,6 +38,7 @@ const THEMES: Array<ContentTheme | 'All'> = [
 
 export const WordBankExplorer: React.FC<WordBankExplorerProps> = ({onBack}) => {
   const {settings} = useAppearance();
+  const screen = useScreenInfo();
   const [summary, setSummary] = useState<WordBankSummary | null>(null);
   const [kind, setKind] = useState<ContentKind>('words');
   const [tier, setTier] = useState<WordDifficultyTier | 0>(0);
@@ -71,10 +73,13 @@ export const WordBankExplorer: React.FC<WordBankExplorerProps> = ({onBack}) => {
     }).then(setEntries);
   }, [kind, tier, theme, focusInput, settings.spelling, seed]);
 
+  const statCols = screen.width < 580 ? 2 : screen.width < 940 ? 3 : 6;
+  const filterCols = screen.width < 760 ? 1 : 3;
+
   return (
-    <div className="mx-auto max-w-[1360px] px-4 py-8 sm:px-6 space-y-6">
+    <main className="tv-fluid-container py-6 space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="space-y-1">
+        <div className="space-y-1 min-w-0">
           <button
             type="button"
             onClick={onBack}
@@ -84,7 +89,7 @@ export const WordBankExplorer: React.FC<WordBankExplorerProps> = ({onBack}) => {
             <ArrowLeft className="w-3.5 h-3.5" aria-hidden="true" />
             <span>Back to Hub</span>
           </button>
-          <h1 className="font-display text-3xl font-bold tracking-tight">
+          <h1 className="font-display font-bold tracking-tight" style={{fontSize: 'var(--tv-text-2xl)'}}>
             Bundled Offline Word Bank
           </h1>
           <p className="text-sm" style={{color: 'var(--tv-text-muted)'}}>
@@ -93,7 +98,7 @@ export const WordBankExplorer: React.FC<WordBankExplorerProps> = ({onBack}) => {
         </div>
 
         <div
-          className="tv-surface rounded-xl px-4 py-3 flex items-center gap-3 text-xs"
+          className="tv-surface rounded-xl px-4 py-3 flex items-center gap-3 text-xs shrink-0"
           style={{color: 'var(--tv-text-muted)'}}
         >
           <Database className="w-4 h-4 shrink-0" style={{color: 'var(--tv-accent)'}} aria-hidden="true" />
@@ -107,7 +112,10 @@ export const WordBankExplorer: React.FC<WordBankExplorerProps> = ({onBack}) => {
       </div>
 
       {summary && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div
+          className="grid gap-3"
+          style={{gridTemplateColumns: `repeat(${statCols}, minmax(0, 1fr))`}}
+        >
           {[
             {label: 'Common Words', value: summary.totalWords.toLocaleString()},
             {label: 'Sentences', value: summary.totalSentences.toLocaleString()},
@@ -116,8 +124,8 @@ export const WordBankExplorer: React.FC<WordBankExplorerProps> = ({onBack}) => {
             {label: 'Symbol Drills', value: summary.totalPunctuationDrills.toLocaleString()},
             {label: 'Code Snippets', value: summary.totalCodeSnippets.toLocaleString()},
           ].map((stat) => (
-            <div key={stat.label} className="tv-surface rounded-xl p-4">
-              <div className="text-xs" style={{color: 'var(--tv-text-muted)'}}>
+            <div key={stat.label} className="tv-surface rounded-xl p-4 min-w-0">
+              <div className="text-xs truncate" style={{color: 'var(--tv-text-muted)'}}>
                 {stat.label}
               </div>
               <div className="font-display text-2xl font-bold tabular-nums mt-1">
@@ -162,8 +170,11 @@ export const WordBankExplorer: React.FC<WordBankExplorerProps> = ({onBack}) => {
           </button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1">
-          <div className="space-y-1">
+        <div
+          className="grid gap-3 pt-1"
+          style={{gridTemplateColumns: `repeat(${filterCols}, minmax(0, 1fr))`}}
+        >
+          <div className="space-y-1 min-w-0">
             <label htmlFor="wb-tier" className="text-xs font-medium" style={{color: 'var(--tv-text-muted)'}}>
               Difficulty Tier
             </label>
@@ -187,7 +198,7 @@ export const WordBankExplorer: React.FC<WordBankExplorerProps> = ({onBack}) => {
             </select>
           </div>
 
-          <div className="space-y-1">
+          <div className="space-y-1 min-w-0">
             <label htmlFor="wb-theme" className="text-xs font-medium" style={{color: 'var(--tv-text-muted)'}}>
               Content Theme
             </label>
@@ -210,7 +221,7 @@ export const WordBankExplorer: React.FC<WordBankExplorerProps> = ({onBack}) => {
             </select>
           </div>
 
-          <div className="space-y-1">
+          <div className="space-y-1 min-w-0">
             <label htmlFor="wb-focus" className="text-xs font-medium flex items-center gap-1.5" style={{color: 'var(--tv-text-muted)'}}>
               <Filter className="w-3 h-3" aria-hidden="true" />
               <span>Filter by Focus Keys (e.g. asdfjkl)</span>
@@ -243,7 +254,7 @@ export const WordBankExplorer: React.FC<WordBankExplorerProps> = ({onBack}) => {
             {entries.map((entry) => (
               <div
                 key={entry.id}
-                className="rounded-lg border px-3 py-1.5 font-typing text-sm"
+                className="rounded-lg border px-3 py-1.5 font-typing text-sm max-w-full break-words"
                 style={{
                   backgroundColor: 'var(--tv-bg)',
                   borderColor: 'var(--tv-border)',
@@ -264,7 +275,7 @@ export const WordBankExplorer: React.FC<WordBankExplorerProps> = ({onBack}) => {
                   borderColor: 'var(--tv-border)',
                 }}
               >
-                <p className="font-typing text-sm leading-relaxed">{entry.text}</p>
+                <p className="font-typing text-sm leading-relaxed break-words">{entry.text}</p>
                 <div className="flex flex-wrap items-center gap-2 text-xs" style={{color: 'var(--tv-text-muted)'}}>
                   <span>Tier {entry.tier}</span>
                   <span aria-hidden="true">·</span>
@@ -277,6 +288,6 @@ export const WordBankExplorer: React.FC<WordBankExplorerProps> = ({onBack}) => {
           </div>
         )}
       </div>
-    </div>
+    </main>
   );
 };

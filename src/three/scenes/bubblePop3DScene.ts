@@ -1,7 +1,9 @@
 import * as THREE from 'three';
+import {DETAIL_CONSTANTS} from '@/src/graphics/detail';
 import {createSceneRenderPipeline} from '@/src/three/bloom';
 import {
   createCappedLoop,
+  createDetailLOD,
   createManagedRenderer,
   fitPerspectiveCamera,
   readThemePalette3D,
@@ -12,6 +14,7 @@ import {
   SCRATCH_VEC3_B,
 } from '@/src/three/core';
 import {WordSpritePool, type PooledWordLabel} from '@/src/three/labelSprites';
+import {createPostPipeline, type ManagedPostPipeline} from '@/src/three/postPipeline';
 import type {LazyThreeMountContext, LazyThreeSceneHandle} from '@/src/three/ThreeCanvasHost';
 
 export interface BubbleSnapshot {
@@ -49,7 +52,6 @@ export interface BubblePop3DState {
 
 interface BubbleVisual {
   group: THREE.Group;
-  sphere: THREE.Mesh;
   ring: THREE.Mesh;
   mat: THREE.MeshPhysicalMaterial;
   ringMat: THREE.MeshBasicMaterial;
@@ -57,6 +59,7 @@ interface BubbleVisual {
   inUse: boolean;
   assignedId: number;
   depthZ: number;
+  usesTransmission: boolean;
 }
 
 interface PopDroplet {
@@ -70,6 +73,47 @@ interface PopDroplet {
   life: number;
   maxLife: number;
   colorHex: number;
+}
+
+const HERO_TRANSMISSION_LIMIT = 3;
+
+function createUnderwaterCausticTexture(accentHex: number, maxAnisotropy: number): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 256;
+  const ctx = canvas.getContext('2d')!;
+  const accentCss = '#' + new THREE.Color(accentHex).getHexString();
+
+  const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+  grad.addColorStop(0, '#0f2347');
+  grad.addColorStop(0.55, '#0b132b');
+  grad.addColorStop(1, '#050918');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Subtle volumetric light shafts behind glass bubbles so transmission shows clean refraction
+  for (let i = 0; i < 6; i++) {
+    const x = 60 + i * 78;
+    const beamGrad = ctx.createLinearGradient(x - 24, 0, x + 28, canvas.height);
+    beamGrad.addColorStop(0, i % 2 === 0 ? 'rgba(56, 189, 248, 0.22)' : accentCss + '30');
+    beamGrad.addColorStop(0.65, 'rgba(34, 211, 238, 0.06)');
+    beamGrad.addColorStop(1, 'rgba(5, 9, 24, 0)');
+    ctx.fillStyle = beamGrad;
+    ctx.beginPath();
+    ctx.moveTo(x - 18, 0);
+    ctx.lineTo(x + 22, 0);
+    ctx.lineTo(x + 56, canvas.height);
+    ctx.lineTo(x - 8, canvas.height);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.generateMipmaps = true;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.anisotropy = Math.max(1, Math.min(8, maxAnisotropy));
+  return tex;
 }
 
 function mapBubbleCoords(
@@ -89,6 +133,9 @@ function mapBubbleCoords(
 
 export function mountScene(ctx: LazyThreeMountContext): LazyThreeSceneHandle {
   const palette = readThemePalette3D();
+  const isRealistic = Boolean(ctx.preset.realistic || ctx.preset.mode === '3d-realistic');
+  const consts = DETAIL_CONSTANTS.realistic;
+
   const managed = createManagedRenderer(ctx.container, ctx.preset, {
     alpha: false,
     useEnvironment: true,
@@ -101,36 +148,47 @@ export function mountScene(ctx: LazyThreeMountContext): LazyThreeSceneHandle {
     scene.fog = new THREE.FogExp2(skyColor, 0.032 / Math.max(0.75, ctx.preset.drawDistanceScale));
   }
 
+  const width = Math.max(1, ctx.container.clientWidth);
+  const height = Math.max(1, ctx.container.clientHeight);
   const baseFov = 48;
-  const camera = new THREE.PerspectiveCamera(
-    baseFov,
-    Math.max(1, ctx.container.clientWidth) / Math.max(1, ctx.container.clientHeight),
-    0.2,
-    120,
-  );
-  camera.position.set(0, 0.25, 11.8);
-  camera.lookAt(0, 0.2, -1);
-  fitPerspectiveCamera(
-    camera,
-    ctx.container.clientWidth,
-    ctx.container.clientHeight,
-    baseFov,
-  );
+  const camera = new THREE.PerspectiveCamera(baseFov, width / height, 0.2, 160);
+  const applyCameraFraming = (w: number, h: number) => {
+    const distScale = fitPerspectiveCamera(camera, w, h, baseFov);
+    camera.position.set(0, 0.25, -1 + 12.8 * distScale);
+    camera.lookAt(0, 0.2, -1);
+  };
+  applyCameraFraming(width, height);
 
   // Studio-lit Deep Water Rig (<= 3 lights)
-  const hemi = new THREE.HemisphereLight(0x93c5fd, 0x0f172a, 0.85);
+  const hemi = new THREE.HemisphereLight(0x93c5fd, 0x0f172a, isRealistic ? 0.95 : 0.85);
   scene.add(hemi);
 
-  const rimLight = new THREE.DirectionalLight(0xffffff, 1.5);
+  const rimLight = new THREE.DirectionalLight(0xffffff, isRealistic ? 1.85 : 1.5);
   rimLight.position.set(8, 12, 10);
   scene.add(rimLight);
 
-  const bottomGlow = new THREE.PointLight(0x22d3ee, 2.0, 22, 1.5);
+  const bottomGlow = new THREE.PointLight(0x22d3ee, isRealistic ? 2.4 : 2.0, 22, 1.5);
   bottomGlow.position.set(0, -3.5, 2);
   scene.add(bottomGlow);
 
-  // Top Escape Danger Laser Bar
-  const dangerGeo = new THREE.BoxGeometry(14.5, 0.06, 0.08);
+  // Realistic Deep-Sea Caustic Backdrop Plane (widened for 32:9 ultrawide)
+  let causticTex: THREE.CanvasTexture | null = null;
+  if (isRealistic) {
+    const maxAniso = renderer.capabilities.getMaxAnisotropy?.() ?? 4;
+    causticTex = createUnderwaterCausticTexture(palette.accent, maxAniso);
+    const backdropGeo = new THREE.PlaneGeometry(115, 30);
+    const backdropMat = new THREE.MeshBasicMaterial({
+      map: causticTex,
+      fog: true,
+      depthWrite: false,
+    });
+    const backdrop = new THREE.Mesh(backdropGeo, backdropMat);
+    backdrop.position.set(0, 0.4, -10.5);
+    scene.add(backdrop);
+  }
+
+  // Top Escape Danger Laser Bar (canonical play-zone bounds)
+  const dangerGeo = new THREE.BoxGeometry(13.8, 0.06, 0.08);
   const dangerMat = new THREE.MeshStandardMaterial({
     color: 0xfb7185,
     emissive: 0xfb7185,
@@ -140,21 +198,22 @@ export function mountScene(ctx: LazyThreeMountContext): LazyThreeSceneHandle {
   dangerBar.position.set(0, 2.95, 0);
   scene.add(dangerBar);
 
-  // Rising Caustic Ambient Micro-Bubbles
-  const moteCount = ctx.preset.tier === 'low' ? 36 : 64;
-  const moteGeo = new THREE.SphereGeometry(0.065, 8, 6);
+  // Rising Caustic Ambient Micro-Bubbles across Full Width
+  const moteCount = ctx.preset.tier === 'low' ? 42 : isRealistic ? 128 : 84;
+  const moteGeo = new THREE.SphereGeometry(0.065, isRealistic ? 14 : 8, isRealistic ? 10 : 6);
   const moteMat = new THREE.MeshPhysicalMaterial({
     color: 0x7dd3fc,
-    roughness: 0.1,
+    roughness: 0.08,
     clearcoat: 1,
+    iridescence: isRealistic ? 0.6 : 0,
     transparent: true,
-    opacity: 0.42,
+    opacity: 0.46,
   });
   const moteInstanced = new THREE.InstancedMesh(moteGeo, moteMat, moteCount);
   moteInstanced.frustumCulled = false;
   const moteData = new Float32Array(moteCount * 4);
   for (let i = 0; i < moteCount; i++) {
-    moteData[i * 4 + 0] = (((i * 61) % 100) / 100 - 0.5) * 18;
+    moteData[i * 4 + 0] = (((i * 61) % 100) / 100 - 0.5) * 52;
     moteData[i * 4 + 1] = (((i * 37) % 100) / 100 - 0.5) * 7.5;
     moteData[i * 4 + 2] = -8 + ((i * 19) % 10);
     moteData[i * 4 + 3] = 0.7 + (i % 5) * 0.28;
@@ -162,27 +221,67 @@ export function mountScene(ctx: LazyThreeMountContext): LazyThreeSceneHandle {
   scene.add(moteInstanced);
 
   // Glossy Physical Bubble Pool + Sprite Labels
-  const sphereGeo = new THREE.SphereGeometry(0.68, 22, 16);
-  const ringGeo = new THREE.TorusGeometry(0.78, 0.04, 8, 26);
+  const sphereGeo = isRealistic
+    ? new THREE.SphereGeometry(
+        0.68,
+        consts.sphereSegments,
+        Math.round(consts.sphereSegments * 0.75),
+      )
+    : new THREE.SphereGeometry(0.68, 22, 16);
+  const farSphereGeo = isRealistic ? new THREE.SphereGeometry(0.68, 24, 18) : null;
+  const ringGeo = isRealistic
+    ? new THREE.TorusGeometry(0.78, 0.04, 14, consts.sphereSegments)
+    : new THREE.TorusGeometry(0.78, 0.04, 8, 26);
 
   const wordSprites = new WordSpritePool(12, 24);
   const bubblePool: BubbleVisual[] = Array.from({length: 12}, (_, idx) => {
     const group = new THREE.Group();
     group.visible = false;
 
-    const mat = new THREE.MeshPhysicalMaterial({
-      color: 0x22d3ee,
-      emissive: 0x22d3ee,
-      emissiveIntensity: 0.24,
-      roughness: 0.06,
-      metalness: 0.14,
-      clearcoat: 1.0,
-      clearcoatRoughness: 0.05,
-      transparent: true,
-      opacity: 0.76,
-    });
-    const sphere = new THREE.Mesh(sphereGeo, mat);
-    group.add(sphere);
+    const usesTransmission = isRealistic && idx < HERO_TRANSMISSION_LIMIT;
+    const mat = usesTransmission
+      ? new THREE.MeshPhysicalMaterial({
+          color: 0xffffff,
+          emissive: 0x22d3ee,
+          emissiveIntensity: 0.16,
+          roughness: 0.04,
+          metalness: 0.0,
+          transmission: 0.88,
+          thickness: 0.48,
+          ior: 1.38,
+          attenuationColor: new THREE.Color(0x38bdf8),
+          attenuationDistance: 1.8,
+          iridescence: 0.9,
+          iridescenceIOR: 1.33,
+          clearcoat: 1.0,
+          clearcoatRoughness: 0.04,
+        })
+      : new THREE.MeshPhysicalMaterial({
+          color: 0x22d3ee,
+          emissive: 0x22d3ee,
+          emissiveIntensity: 0.24,
+          roughness: isRealistic ? 0.04 : 0.06,
+          metalness: isRealistic ? 0.1 : 0.14,
+          clearcoat: 1.0,
+          clearcoatRoughness: isRealistic ? 0.03 : 0.05,
+          iridescence: isRealistic ? 0.88 : 0,
+          iridescenceIOR: 1.33,
+          transparent: true,
+          opacity: isRealistic ? 0.64 : 0.76,
+        });
+
+    if (isRealistic && farSphereGeo) {
+      const highSphere = new THREE.Mesh(sphereGeo, mat);
+      const farSphere = new THREE.Mesh(farSphereGeo, mat);
+      const lod = createDetailLOD([
+        {object: highSphere, distance: 0},
+        {object: farSphere, distance: 14},
+      ]);
+      group.add(lod);
+    } else {
+      const sphere = new THREE.Mesh(sphereGeo, mat);
+      group.add(sphere);
+    }
 
     const ringMat = new THREE.MeshBasicMaterial({
       color: 0xffffff,
@@ -196,7 +295,6 @@ export function mountScene(ctx: LazyThreeMountContext): LazyThreeSceneHandle {
     scene.add(group);
     return {
       group,
-      sphere,
       ring,
       mat,
       ringMat,
@@ -204,13 +302,22 @@ export function mountScene(ctx: LazyThreeMountContext): LazyThreeSceneHandle {
       inUse: false,
       assignedId: -1,
       depthZ: ((idx % 3) - 1) * 1.15 - 0.5,
+      usesTransmission,
     };
   });
 
   // Pooled Pop Particle Burst Spheres
   const maxDroplets = Math.max(24, Math.round(72 * ctx.preset.particleScale));
-  const dropletGeo = new THREE.SphereGeometry(0.09, 6, 6);
-  const dropletMat = new THREE.MeshBasicMaterial({color: 0xffffff});
+  const dropletGeo = new THREE.SphereGeometry(0.09, isRealistic ? 12 : 6, isRealistic ? 8 : 6);
+  const dropletMat = isRealistic
+    ? new THREE.MeshPhysicalMaterial({
+        color: 0xffffff,
+        emissive: 0x1e293b,
+        emissiveIntensity: 0.35,
+        roughness: 0.1,
+        clearcoat: 1.0,
+      })
+    : new THREE.MeshBasicMaterial({color: 0xffffff});
   const dropletInstanced = new THREE.InstancedMesh(dropletGeo, dropletMat, maxDroplets);
   dropletInstanced.frustumCulled = false;
 
@@ -243,11 +350,27 @@ export function mountScene(ctx: LazyThreeMountContext): LazyThreeSceneHandle {
   const accentCss = '#' + new THREE.Color(palette.accent).getHexString();
   let externalState: BubblePop3DState | null = null;
 
-  const pipeline = createSceneRenderPipeline(renderer, scene, camera, ctx.preset, ctx.probe, {
-    strength: 0.34,
-    radius: 0.36,
-    threshold: 0.84,
-  });
+  let legacyPipeline: ReturnType<typeof createSceneRenderPipeline> | null = null;
+  let realisticPost: ManagedPostPipeline | null = null;
+
+  if (isRealistic) {
+    if (ctx.preset.postEffects) {
+      realisticPost = createPostPipeline(renderer, scene, camera, {
+        width,
+        height,
+        pixelRatio: managed.pixelRatio,
+        multisampleSamples: ctx.preset.multisampleSamples,
+        enableBloom: true,
+        enableVignette: true,
+      });
+    }
+  } else {
+    legacyPipeline = createSceneRenderPipeline(renderer, scene, camera, ctx.preset, ctx.probe, {
+      strength: 0.34,
+      radius: 0.36,
+      threshold: 0.84,
+    });
+  }
 
   if (!ctx.probe.isSoftwareGl) {
     renderer.compile(scene, camera);
@@ -312,9 +435,15 @@ export function mountScene(ctx: LazyThreeMountContext): LazyThreeSceneHandle {
 
       const locked = snap?.lockedId === bubble.id;
       SCRATCH_COLOR.set(bubble.color);
-      slot.mat.color.copy(SCRATCH_COLOR);
-      slot.mat.emissive.copy(SCRATCH_COLOR);
-      slot.mat.emissiveIntensity = locked ? 0.55 : 0.24;
+      if (slot.usesTransmission) {
+        slot.mat.attenuationColor.copy(SCRATCH_COLOR);
+        slot.mat.emissive.copy(SCRATCH_COLOR);
+        slot.mat.emissiveIntensity = locked ? 0.35 : 0.14;
+      } else {
+        slot.mat.color.copy(SCRATCH_COLOR);
+        slot.mat.emissive.copy(SCRATCH_COLOR);
+        slot.mat.emissiveIntensity = locked ? 0.55 : 0.24;
+      }
       slot.ring.visible = locked;
 
       if (slot.badge) {
@@ -388,7 +517,13 @@ export function mountScene(ctx: LazyThreeMountContext): LazyThreeSceneHandle {
     dropletInstanced.instanceMatrix.needsUpdate = true;
     if (dropletInstanced.instanceColor) dropletInstanced.instanceColor.needsUpdate = true;
 
-    pipeline.render();
+    if (realisticPost) {
+      realisticPost.render(dtSec);
+    } else if (legacyPipeline) {
+      legacyPipeline.render();
+    } else {
+      renderer.render(scene, camera);
+    }
   };
 
   const loop = createCappedLoop({
@@ -410,14 +545,27 @@ export function mountScene(ctx: LazyThreeMountContext): LazyThreeSceneHandle {
           : ctx.preset.sceneFrameCap,
       );
     },
-    resize(width: number, height: number) {
-      managed.resize(width, height, camera, baseFov);
-      pipeline.resize(width, height);
+    resize(w: number, h: number) {
+      managed.resize(w, h, camera, baseFov);
+      applyCameraFraming(w, h);
+      legacyPipeline?.resize(w, h);
+      realisticPost?.setSize(w, h, managed.pixelRatio);
     },
     dispose() {
       loop.stop();
       wordSprites.dispose();
-      pipeline.dispose();
+      if (legacyPipeline) {
+        legacyPipeline.dispose();
+        legacyPipeline = null;
+      }
+      if (realisticPost) {
+        realisticPost.dispose();
+        realisticPost = null;
+      }
+      if (causticTex) {
+        causticTex.dispose();
+        causticTex = null;
+      }
       managed.dispose();
     },
   };

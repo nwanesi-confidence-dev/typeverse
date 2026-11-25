@@ -5,11 +5,16 @@ import {
   StarDefenderEngine,
 } from '@/src/arcade/engine/starDefenderEngine';
 import {
+  CANONICAL_PLAY_HEIGHT,
+  CANONICAL_PLAY_WIDTH,
+} from '@/src/arcade/playZone';
+import {
   renderStarDefender2D,
   type LaserBeam2D,
   type StarParticle2D,
 } from '@/src/arcade/renderer-2d/StarDefender2D';
 import {StarDefender3D} from '@/src/arcade/renderer-3d/StarDefender3D';
+import {useCanvas2DResizeObserver} from '@/src/arcade/usePlayfieldSize';
 import {soundEngine} from '@/src/audio/soundEngine';
 import {
   DIFFICULTY_META,
@@ -45,6 +50,7 @@ export const StarDefenderGame: React.FC<ArcadeCommonProps> = ({
     lockedMode,
     show3D,
     webgl2Supported,
+    isSoftwareRenderer,
     contextLostOpen,
     webglRetryNonce,
     markContextLost,
@@ -146,17 +152,16 @@ export const StarDefenderGame: React.FC<ArcadeCommonProps> = ({
 
       if (res.correct) {
         soundEngine.playLaser();
-        const canvas = canvasRef.current;
-        if (!show3D && canvas && res.targetXNorm !== undefined && res.targetY !== undefined) {
+        if (!show3D && res.targetXNorm !== undefined && res.targetY !== undefined) {
           beams2DRef.current.push({
-            x1: canvas.clientWidth / 2,
-            y1: canvas.clientHeight - 36,
-            x2: res.targetXNorm * canvas.clientWidth,
+            x1: CANONICAL_PLAY_WIDTH / 2,
+            y1: CANONICAL_PLAY_HEIGHT - 36,
+            x2: res.targetXNorm * CANONICAL_PLAY_WIDTH,
             y2: res.targetY,
             life: 1,
           });
           if (res.destroyed && !reducedMotion) {
-            const cx = res.targetXNorm * canvas.clientWidth;
+            const cx = res.targetXNorm * CANONICAL_PLAY_WIDTH;
             const cy = res.targetY;
             for (let i = 0; i < 12; i++) {
               if (particles2DRef.current.length >= 48) break;
@@ -202,6 +207,26 @@ export const StarDefenderGame: React.FC<ArcadeCommonProps> = ({
     };
   }, [lockedMode, reducedMotion, show3D, onFinish, onExit]);
 
+  const render2DFrame = useCallback(
+    (dtSec: number) => {
+      if (show3D || !canvasRef.current) return;
+      const eng = engineRef.current;
+      renderStarDefender2D({
+        canvas: canvasRef.current,
+        state: eng.state,
+        targetClears: eng.cfg.targetClears,
+        beams: beams2DRef.current,
+        particles: particles2DRef.current,
+        dtSec,
+        resolvedMode: lockedMode,
+        isSoftwareRenderer,
+      });
+    },
+    [show3D, lockedMode, isSoftwareRenderer],
+  );
+
+  useCanvas2DResizeObserver(canvasRef, !show3D, () => render2DFrame(0));
+
   useEffect(() => {
     let raf = 0;
     let lastTs = performance.now();
@@ -211,10 +236,8 @@ export const StarDefenderGame: React.FC<ArcadeCommonProps> = ({
       const dt = Math.min(0.05, (now - lastTs) / 1000);
       lastTs = now;
       const eng = engineRef.current;
-      const canvas = canvasRef.current;
 
-      const h = !show3D && canvas ? canvas.clientHeight : STAR_DEFENDER_FIELD_HEIGHT;
-      const stepRes = eng.step(dt, h, now);
+      const stepRes = eng.step(dt, STAR_DEFENDER_FIELD_HEIGHT, now);
 
       if (stepRes.shieldsLost > 0) {
         soundEngine.playHitChime('miss');
@@ -227,16 +250,7 @@ export const StarDefenderGame: React.FC<ArcadeCommonProps> = ({
         });
       }
 
-      if (!show3D && canvas) {
-        renderStarDefender2D({
-          canvas,
-          state: eng.state,
-          targetClears: eng.cfg.targetClears,
-          beams: beams2DRef.current,
-          particles: particles2DRef.current,
-          dtSec: dt,
-        });
-      }
+      render2DFrame(dt);
 
       if (now - lastHud >= 33) {
         lastHud = now;
@@ -264,7 +278,7 @@ export const StarDefenderGame: React.FC<ArcadeCommonProps> = ({
 
     raf = window.requestAnimationFrame(loop);
     return () => window.cancelAnimationFrame(raf);
-  }, [difficulty, lockedMode, show3D, onFinish, onTelemetry]);
+  }, [difficulty, lockedMode, render2DFrame, show3D, onFinish, onTelemetry]);
 
   const defender3DState: StarDefender3DState = useMemo(
     () => ({
@@ -281,18 +295,18 @@ export const StarDefenderGame: React.FC<ArcadeCommonProps> = ({
   };
 
   return (
-    <div className="tv-surface rounded-2xl p-5 space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="text-xs font-medium flex flex-wrap items-center gap-2" style={{color: 'var(--tv-text-muted)'}}>
-          <span>Star Defender · {DIFFICULTY_META[difficulty].label} · Type the first letter to lock target and blast descending asteroids</span>
+    <div className="tv-surface rounded-2xl p-3 sm:p-4 flex flex-col gap-2.5 flex-1 min-h-0">
+      <div className="shrink-0 flex flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0 text-xs font-medium flex flex-wrap items-center gap-2" style={{color: 'var(--tv-text-muted)'}}>
+          <span className="truncate">Star Defender · {DIFFICULTY_META[difficulty].label} · Type the first letter to lock target and blast descending asteroids</span>
           <span
-            className="rounded-md border px-2 py-0.5 text-[11px] font-semibold"
+            className="rounded-md border px-2 py-0.5 text-[11px] font-semibold shrink-0"
             style={{borderColor: 'var(--tv-border)', backgroundColor: 'var(--tv-bg)'}}
           >
             {formatResolvedModeLabel(lockedMode)}
           </span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
             onClick={togglePause}
@@ -327,7 +341,7 @@ export const StarDefenderGame: React.FC<ArcadeCommonProps> = ({
         />
       )}
 
-      <div className="relative rounded-xl overflow-hidden border" style={{borderColor: 'var(--tv-border)'}}>
+      <div className="relative flex-1 min-h-[200px] rounded-xl overflow-hidden border" style={{borderColor: 'var(--tv-border)'}}>
         {show3D ? (
           <StarDefender3D
             gameId="star-defender"
@@ -341,7 +355,7 @@ export const StarDefenderGame: React.FC<ArcadeCommonProps> = ({
         ) : (
           <canvas
             ref={canvasRef}
-            className="block w-full h-[360px]"
+            className="block w-full h-full"
             aria-label="Star Defender space canvas"
           />
         )}

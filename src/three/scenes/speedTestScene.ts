@@ -1,9 +1,16 @@
 import * as THREE from 'three';
 import {getDetailConstants, REALISTIC_VISUAL_TUNING} from '@/src/graphics/detail';
 import {GRAPHICS_THRESHOLDS} from '@/src/graphics/thresholds';
-import {addRealisticStudioLights, getOrCreateSessionEnvironment} from '@/src/three/core';
+import {
+  addRealisticStudioLights,
+  disposeSessionEnvironmentIfRenderer,
+  getOrCreateSessionEnvironment,
+} from '@/src/three/core';
 import {createPostPipeline} from '@/src/three/postPipeline';
-import {acquireSessionPbrTextures} from '@/src/three/proceduralTextures';
+import {
+  acquireSessionPbrTextures,
+  releaseSessionPbrTextures,
+} from '@/src/three/proceduralTextures';
 
 export interface SpeedTestSampleResult {
   medianFps: number;
@@ -390,6 +397,8 @@ export async function runRealisticHeavySpeedTest(options: {
       rafId = 0;
     }
     post.dispose();
+    releaseSessionPbrTextures(pbr.sizeTier);
+    disposeSessionEnvironmentIfRenderer(renderer);
     scene.environment = null;
     scene.clear();
     floorGeo.dispose();

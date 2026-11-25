@@ -8,10 +8,15 @@ interface TouchDeviceGateProps {
 export const TouchDeviceGate: React.FC<TouchDeviceGateProps> = ({onDismiss}) => {
   return (
     <div
-      className="min-h-screen flex items-center justify-center p-6"
-      style={{backgroundColor: 'var(--tv-bg)', color: 'var(--tv-text)'}}
+      className="h-full w-full overflow-y-auto flex items-center justify-center p-4"
+      style={{
+        backgroundColor: 'var(--tv-bg)',
+        color: 'var(--tv-text)',
+        paddingTop: 'max(1rem, env(safe-area-inset-top))',
+        paddingBottom: 'max(1rem, env(safe-area-inset-bottom))',
+      }}
     >
-      <div className="tv-surface max-w-md w-full rounded-2xl p-8 text-center space-y-5">
+      <div className="tv-surface w-[min(100%,28rem)] max-h-full overflow-y-auto rounded-2xl p-5 sm:p-7 text-center space-y-4 my-auto">
         <div
           className="mx-auto flex h-14 w-14 items-center justify-center rounded-xl"
           style={{backgroundColor: 'var(--tv-surface-elevated)', color: 'var(--tv-accent)'}}
@@ -19,7 +24,7 @@ export const TouchDeviceGate: React.FC<TouchDeviceGateProps> = ({onDismiss}) => 
           <Keyboard className="w-7 h-7" aria-hidden="true" />
         </div>
         <div className="space-y-2">
-          <h1 className="font-display text-2xl font-bold text-balance">
+          <h1 className="font-display text-xl sm:text-2xl font-bold text-balance">
             Connect a physical keyboard
           </h1>
           <p className="text-sm leading-relaxed" style={{color: 'var(--tv-text-muted)'}}>

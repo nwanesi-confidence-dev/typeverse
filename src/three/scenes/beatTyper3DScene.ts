@@ -1,7 +1,9 @@
 import * as THREE from 'three';
+import {DETAIL_CONSTANTS, REALISTIC_VISUAL_TUNING} from '@/src/graphics/detail';
 import {createSceneRenderPipeline} from '@/src/three/bloom';
 import {
   createCappedLoop,
+  createDetailLOD,
   createManagedRenderer,
   fitPerspectiveCamera,
   readThemePalette3D,
@@ -13,6 +15,11 @@ import {
   SCRATCH_VEC3_B,
 } from '@/src/three/core';
 import {WordSpritePool, type PooledWordLabel} from '@/src/three/labelSprites';
+import {createPostPipeline, type ManagedPostPipeline} from '@/src/three/postPipeline';
+import {
+  acquireSessionPbrTextures,
+  releaseSessionPbrTextures,
+} from '@/src/three/proceduralTextures';
 import type {LazyThreeMountContext, LazyThreeSceneHandle} from '@/src/three/ThreeCanvasHost';
 
 export interface BeatNoteSnapshot {
@@ -47,6 +54,7 @@ export interface BeatTyper3DState {
 interface NoteVisual {
   group: THREE.Group;
   gemMat: THREE.MeshPhysicalMaterial;
+  baseMat: THREE.MeshStandardMaterial;
   badge: PooledWordLabel | null;
   inUse: boolean;
   assignedId: number;
@@ -71,8 +79,40 @@ const LANE_X = [-3.3, -1.1, 1.1, 3.3] as const;
 const LANE_HEX = [0xf472b6, 0x34d399, 0x22d3ee, 0xa78bfa] as const;
 const LANE_CSS = ['#F472B6', '#34D399', '#22D3EE', '#A78BFA'] as const;
 
+function createRoundedNoteBaseGeometry(bevelSegments: number): THREE.BufferGeometry {
+  const hw = 0.56;
+  const hd = 0.41;
+  const r = 0.12;
+  const shape = new THREE.Shape();
+  shape.moveTo(-hw + r, -hd);
+  shape.lineTo(hw - r, -hd);
+  shape.quadraticCurveTo(hw, -hd, hw, -hd + r);
+  shape.lineTo(hw, hd - r);
+  shape.quadraticCurveTo(hw, hd, hw - r, hd);
+  shape.lineTo(-hw + r, hd);
+  shape.quadraticCurveTo(-hw, hd, -hw, hd - r);
+  shape.lineTo(-hw, -hd + r);
+  shape.quadraticCurveTo(-hw, -hd, -hw + r, -hd);
+
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth: 0.18,
+    bevelEnabled: true,
+    bevelThickness: 0.04,
+    bevelSize: 0.04,
+    bevelSegments,
+    curveSegments: 8,
+  });
+  geo.center();
+  geo.rotateX(Math.PI / 2);
+  geo.computeVertexNormals();
+  return geo;
+}
+
 export function mountScene(ctx: LazyThreeMountContext): LazyThreeSceneHandle {
   const palette = readThemePalette3D();
+  const isRealistic = Boolean(ctx.preset.realistic || ctx.preset.mode === '3d-realistic');
+  const consts = DETAIL_CONSTANTS.realistic;
+
   const managed = createManagedRenderer(ctx.container, ctx.preset, {
     alpha: false,
     useEnvironment: true,
@@ -82,62 +122,126 @@ export function mountScene(ctx: LazyThreeMountContext): LazyThreeSceneHandle {
   const skyColor = 0x070a18;
   scene.background = new THREE.Color(skyColor);
   if (ctx.preset.fog) {
-    scene.fog = new THREE.Fog(skyColor, 18, 48 * Math.max(0.8, ctx.preset.drawDistanceScale));
+    scene.fog = new THREE.Fog(skyColor, 18, (isRealistic ? 54 : 48) * Math.max(0.8, ctx.preset.drawDistanceScale));
   }
 
+  const width = Math.max(1, ctx.container.clientWidth);
+  const height = Math.max(1, ctx.container.clientHeight);
   const baseFov = 50;
-  const camera = new THREE.PerspectiveCamera(
-    baseFov,
-    Math.max(1, ctx.container.clientWidth) / Math.max(1, ctx.container.clientHeight),
-    0.2,
-    120,
-  );
-  camera.position.set(0, 5.4, 9.2);
-  camera.lookAt(0, 0.25, -7.2);
-  fitPerspectiveCamera(
-    camera,
-    ctx.container.clientWidth,
-    ctx.container.clientHeight,
-    baseFov,
-  );
+  const camera = new THREE.PerspectiveCamera(baseFov, width / height, 0.2, 160);
+  const applyCameraFraming = (w: number, h: number) => {
+    const distScale = fitPerspectiveCamera(camera, w, h, baseFov);
+    camera.position.set(0, 0.25 + 5.15 * Math.sqrt(distScale), -7.2 + 16.4 * distScale);
+    camera.lookAt(0, 0.25, -7.2);
+  };
+  applyCameraFraming(width, height);
 
   // Rhythm Stage 3-Light Rig (<= 3 lights)
-  const hemi = new THREE.HemisphereLight(0xa5f3fc, 0x090d1c, 0.72);
+  const hemi = new THREE.HemisphereLight(0xa5f3fc, 0x090d1c, isRealistic ? 0.82 : 0.72);
   scene.add(hemi);
 
-  const dirLight = new THREE.DirectionalLight(0xf8fafc, 1.45);
+  const dirLight = new THREE.DirectionalLight(0xf8fafc, isRealistic ? 1.85 : 1.45);
   dirLight.position.set(6, 16, 12);
   if (ctx.preset.shadows) {
     dirLight.castShadow = true;
-    dirLight.shadow.mapSize.set(1024, 1024);
-    dirLight.shadow.bias = -0.0005;
+    const shadowSize = isRealistic ? REALISTIC_VISUAL_TUNING.shadowMapSize : 1024;
+    dirLight.shadow.mapSize.set(shadowSize, shadowSize);
+    if (isRealistic) {
+      dirLight.shadow.camera.near = 2;
+      dirLight.shadow.camera.far = 48;
+      dirLight.shadow.camera.left = -9;
+      dirLight.shadow.camera.right = 9;
+      dirLight.shadow.camera.top = 18;
+      dirLight.shadow.camera.bottom = -10;
+      dirLight.shadow.normalBias = 0.025;
+    }
+    dirLight.shadow.bias = -0.0004;
   }
   scene.add(dirLight);
 
-  const strikeGlow = new THREE.PointLight(palette.accent, 2.2, 22, 1.5);
+  const strikeGlow = new THREE.PointLight(palette.accent, isRealistic ? 2.6 : 2.2, 22, 1.5);
   strikeGlow.position.set(0, 1.6, 2.2);
   scene.add(strikeGlow);
 
-  // 1. Perspective Note Highway Deck & Lane Dividers
-  const deckGeo = new THREE.BoxGeometry(9.6, 0.2, 44);
-  const deckMat = new THREE.MeshStandardMaterial({
-    color: 0x0b1224,
-    roughness: 0.45,
-    metalness: 0.45,
+  // Wide Ambient Stage Apron & Flanking Equalizer Ribs (fills 21:9/32:9 side wings cleanly)
+  const stageApronGeo = new THREE.PlaneGeometry(120, 54);
+  stageApronGeo.rotateX(-Math.PI / 2);
+  const stageApronMat = new THREE.MeshStandardMaterial({
+    color: 0x050814,
+    roughness: 0.72,
+    metalness: 0.35,
   });
+  const stageApron = new THREE.Mesh(stageApronGeo, stageApronMat);
+  stageApron.position.set(0, -0.22, -15);
+  scene.add(stageApron);
+
+  const sideRibPerSide = 12;
+  const sideRibCount = sideRibPerSide * 2;
+  const sideRibGeo = new THREE.BoxGeometry(0.45, 1, 1.4);
+  const sideRibMat = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    emissive: palette.accent,
+    emissiveIntensity: 0.55,
+    roughness: 0.3,
+    metalness: 0.65,
+  });
+  const sideRibInstanced = new THREE.InstancedMesh(sideRibGeo, sideRibMat, sideRibCount);
+  sideRibInstanced.frustumCulled = false;
+  for (let i = 0; i < sideRibCount; i++) {
+    const colHex = LANE_HEX[i % 4];
+    SCRATCH_COLOR.setHex(colHex);
+    sideRibInstanced.setColorAt(i, SCRATCH_COLOR);
+  }
+  if (sideRibInstanced.instanceColor) sideRibInstanced.instanceColor.needsUpdate = true;
+  scene.add(sideRibInstanced);
+
+  // 1. Perspective Note Highway Deck & Lane Dividers
+  const deckGeo = isRealistic
+    ? new THREE.BoxGeometry(9.6, 0.2, 44, 6, 1, 24)
+    : new THREE.BoxGeometry(9.6, 0.2, 44);
+  if (isRealistic) {
+    const uv = deckGeo.attributes.uv as THREE.BufferAttribute;
+    for (let i = 0; i < uv.count; i++) {
+      uv.setXY(i, uv.getX(i) * 2, uv.getY(i) * 6);
+    }
+    uv.needsUpdate = true;
+  }
+
+  const deckMat = isRealistic
+    ? new THREE.MeshPhysicalMaterial({
+        color: 0x0b1224,
+        roughness: 0.36,
+        metalness: 0.62,
+        clearcoat: 0.55,
+        clearcoatRoughness: 0.22,
+      })
+    : new THREE.MeshStandardMaterial({
+        color: 0x0b1224,
+        roughness: 0.45,
+        metalness: 0.45,
+      });
   const deck = new THREE.Mesh(deckGeo, deckMat);
   deck.position.set(0, -0.1, -15);
   deck.receiveShadow = ctx.preset.shadows;
   scene.add(deck);
 
   const railGeo = new THREE.BoxGeometry(0.14, 0.28, 44);
-  const railMat = new THREE.MeshStandardMaterial({
-    color: 0x1e293b,
-    emissive: palette.accent,
-    emissiveIntensity: 0.55,
-    roughness: 0.25,
-    metalness: 0.7,
-  });
+  const railMat = isRealistic
+    ? new THREE.MeshPhysicalMaterial({
+        color: 0x1e293b,
+        emissive: palette.accent,
+        emissiveIntensity: 0.62,
+        roughness: 0.2,
+        metalness: 0.8,
+        clearcoat: 0.75,
+      })
+    : new THREE.MeshStandardMaterial({
+        color: 0x1e293b,
+        emissive: palette.accent,
+        emissiveIntensity: 0.55,
+        roughness: 0.25,
+        metalness: 0.7,
+      });
   const railL = new THREE.Mesh(railGeo, railMat);
   railL.position.set(-4.85, 0.08, -15);
   scene.add(railL);
@@ -174,57 +278,134 @@ export function mountScene(ctx: LazyThreeMountContext): LazyThreeSceneHandle {
   strikeStrip.position.set(0, 0.03, strikeZ);
   scene.add(strikeStrip);
 
-  const receptorGeo = new THREE.CylinderGeometry(0.62, 0.68, 0.14, 16);
+  const receptorGeo = isRealistic
+    ? new THREE.CylinderGeometry(0.62, 0.68, 0.14, consts.latheSegments)
+    : new THREE.CylinderGeometry(0.62, 0.68, 0.14, 16);
+  const receptorRingGeo = isRealistic
+    ? new THREE.TorusGeometry(0.66, 0.045, 16, 48)
+    : null;
+  if (receptorRingGeo) {
+    receptorRingGeo.rotateX(Math.PI / 2);
+  }
+
   const receptorMats: THREE.MeshStandardMaterial[] = [];
   for (let l = 0; l < 4; l++) {
-    const rMat = new THREE.MeshStandardMaterial({
-      color: 0x0f172a,
-      emissive: LANE_HEX[l],
-      emissiveIntensity: 0.45,
-      metalness: 0.6,
-      roughness: 0.25,
-    });
+    const rMat = isRealistic
+      ? new THREE.MeshPhysicalMaterial({
+          color: 0x0f172a,
+          emissive: LANE_HEX[l],
+          emissiveIntensity: 0.45,
+          metalness: 0.78,
+          roughness: 0.2,
+          clearcoat: 0.8,
+        })
+      : new THREE.MeshStandardMaterial({
+          color: 0x0f172a,
+          emissive: LANE_HEX[l],
+          emissiveIntensity: 0.45,
+          metalness: 0.6,
+          roughness: 0.25,
+        });
     receptorMats.push(rMat);
     const pad = new THREE.Mesh(receptorGeo, rMat);
     pad.position.set(LANE_X[l], 0.08, strikeZ);
+    pad.receiveShadow = ctx.preset.shadows;
     scene.add(pad);
+
+    if (isRealistic && receptorRingGeo) {
+      const trimMat = new THREE.MeshStandardMaterial({
+        color: LANE_HEX[l],
+        emissive: LANE_HEX[l],
+        emissiveIntensity: 0.85,
+        metalness: 0.85,
+        roughness: 0.2,
+      });
+      const ring = new THREE.Mesh(receptorRingGeo, trimMat);
+      ring.position.set(LANE_X[l], 0.15, strikeZ);
+      scene.add(ring);
+    }
   }
 
   // 2. Pooled 3D Beveled Note Keycaps + Sprite Key Badges
-  const noteBaseGeo = new THREE.BoxGeometry(1.18, 0.24, 0.88);
-  const noteCapGeo = new THREE.CylinderGeometry(0.42, 0.48, 0.22, 8);
+  const noteBaseGeo = isRealistic
+    ? createRoundedNoteBaseGeometry(consts.keycapBevelSegments)
+    : new THREE.BoxGeometry(1.18, 0.24, 0.88);
+  const farNoteBaseGeo = isRealistic ? new THREE.BoxGeometry(1.18, 0.24, 0.88) : null;
+  const noteCapGeo = isRealistic
+    ? new THREE.CylinderGeometry(0.42, 0.48, 0.22, 32)
+    : new THREE.CylinderGeometry(0.42, 0.48, 0.22, 8);
+  const farNoteCapGeo = isRealistic ? new THREE.CylinderGeometry(0.42, 0.48, 0.22, 8) : null;
+
   const wordSprites = new WordSpritePool(16, 28);
 
   const notePool: NoteVisual[] = Array.from({length: 18}, () => {
     const group = new THREE.Group();
     group.visible = false;
 
-    const baseMat = new THREE.MeshStandardMaterial({
-      color: 0x0f172a,
-      roughness: 0.45,
-      metalness: 0.5,
-    });
-    const baseMesh = new THREE.Mesh(noteBaseGeo, baseMat);
-    baseMesh.position.y = 0.14;
-    baseMesh.castShadow = ctx.preset.shadows;
-    group.add(baseMesh);
+    const baseMat = isRealistic
+      ? new THREE.MeshPhysicalMaterial({
+          color: 0x0f172a,
+          roughness: 0.32,
+          metalness: 0.62,
+          clearcoat: 0.72,
+          clearcoatRoughness: 0.15,
+        })
+      : new THREE.MeshStandardMaterial({
+          color: 0x0f172a,
+          roughness: 0.45,
+          metalness: 0.5,
+        });
 
     const gemMat = new THREE.MeshPhysicalMaterial({
       color: 0x22d3ee,
       emissive: 0x22d3ee,
       emissiveIntensity: 0.72,
-      roughness: 0.14,
-      metalness: 0.25,
+      roughness: isRealistic ? 0.09 : 0.14,
+      metalness: isRealistic ? 0.28 : 0.25,
       clearcoat: 1.0,
+      clearcoatRoughness: isRealistic ? 0.05 : 0.12,
     });
-    const gemMesh = new THREE.Mesh(noteCapGeo, gemMat);
-    gemMesh.position.y = 0.34;
-    group.add(gemMesh);
+
+    if (isRealistic && farNoteBaseGeo && farNoteCapGeo) {
+      const highNote = new THREE.Group();
+      const baseH = new THREE.Mesh(noteBaseGeo, baseMat);
+      baseH.position.y = 0.14;
+      baseH.castShadow = ctx.preset.shadows;
+      highNote.add(baseH);
+      const gemH = new THREE.Mesh(noteCapGeo, gemMat);
+      gemH.position.y = 0.34;
+      gemH.castShadow = ctx.preset.shadows;
+      highNote.add(gemH);
+
+      const farNote = new THREE.Group();
+      const baseF = new THREE.Mesh(farNoteBaseGeo, baseMat);
+      baseF.position.y = 0.14;
+      farNote.add(baseF);
+      const gemF = new THREE.Mesh(farNoteCapGeo, gemMat);
+      gemF.position.y = 0.34;
+      farNote.add(gemF);
+
+      const lod = createDetailLOD([
+        {object: highNote, distance: 0},
+        {object: farNote, distance: 18},
+      ]);
+      group.add(lod);
+    } else {
+      const baseMesh = new THREE.Mesh(noteBaseGeo, baseMat);
+      baseMesh.position.y = 0.14;
+      baseMesh.castShadow = ctx.preset.shadows;
+      group.add(baseMesh);
+
+      const gemMesh = new THREE.Mesh(noteCapGeo, gemMat);
+      gemMesh.position.y = 0.34;
+      group.add(gemMesh);
+    }
 
     scene.add(group);
     return {
       group,
       gemMat,
+      baseMat,
       badge: null,
       inUse: false,
       assignedId: -1,
@@ -236,7 +417,15 @@ export function mountScene(ctx: LazyThreeMountContext): LazyThreeSceneHandle {
   // 3. InstancedMesh Hit Sparks
   const maxSparks = Math.max(20, Math.round(64 * ctx.preset.particleScale));
   const sparkGeo = new THREE.OctahedronGeometry(0.11, 0);
-  const sparkMat = new THREE.MeshBasicMaterial({color: 0xffffff});
+  const sparkMat = isRealistic
+    ? new THREE.MeshPhysicalMaterial({
+        color: 0xffffff,
+        emissive: 0x334155,
+        emissiveIntensity: 0.65,
+        roughness: 0.25,
+        metalness: 0.55,
+      })
+    : new THREE.MeshBasicMaterial({color: 0xffffff});
   const sparkInstanced = new THREE.InstancedMesh(sparkGeo, sparkMat, maxSparks);
   sparkInstanced.frustumCulled = false;
 
@@ -266,14 +455,53 @@ export function mountScene(ctx: LazyThreeMountContext): LazyThreeSceneHandle {
   scene.add(sparkInstanced);
   let sparkCursor = 0;
 
+  let disposed = false;
+  let acquiredPbrSize: 512 | 1024 | null = null;
+  if (isRealistic) {
+    void acquireSessionPbrTextures(renderer, 1024).then((pbr) => {
+      if (disposed) {
+        releaseSessionPbrTextures(pbr.sizeTier);
+        return;
+      }
+      acquiredPbrSize = pbr.sizeTier;
+      deckMat.normalMap = pbr.metalNormal;
+      deckMat.normalScale.set(0.24, 0.24);
+      deckMat.roughnessMap = pbr.metalRoughness;
+      deckMat.needsUpdate = true;
+
+      for (const slot of notePool) {
+        slot.baseMat.normalMap = pbr.keycapNormal;
+        slot.baseMat.normalScale.set(0.25, 0.25);
+        slot.baseMat.roughnessMap = pbr.keycapRoughness;
+        slot.baseMat.needsUpdate = true;
+      }
+    });
+  }
+
   let externalState: BeatTyper3DState | null = null;
   let highwayOffset = 0;
 
-  const pipeline = createSceneRenderPipeline(renderer, scene, camera, ctx.preset, ctx.probe, {
-    strength: 0.36,
-    radius: 0.34,
-    threshold: 0.84,
-  });
+  let legacyPipeline: ReturnType<typeof createSceneRenderPipeline> | null = null;
+  let realisticPost: ManagedPostPipeline | null = null;
+
+  if (isRealistic) {
+    if (ctx.preset.postEffects) {
+      realisticPost = createPostPipeline(renderer, scene, camera, {
+        width,
+        height,
+        pixelRatio: managed.pixelRatio,
+        multisampleSamples: ctx.preset.multisampleSamples,
+        enableBloom: true,
+        enableVignette: true,
+      });
+    }
+  } else {
+    legacyPipeline = createSceneRenderPipeline(renderer, scene, camera, ctx.preset, ctx.probe, {
+      strength: 0.36,
+      radius: 0.34,
+      threshold: 0.84,
+    });
+  }
 
   if (!ctx.probe.isSoftwareGl) {
     renderer.compile(scene, camera);
@@ -298,6 +526,28 @@ export function mountScene(ctx: LazyThreeMountContext): LazyThreeSceneHandle {
       barInstanced.setMatrixAt(i, SCRATCH_MAT4);
     }
     barInstanced.instanceMatrix.needsUpdate = true;
+
+    // 1b. Pulse flanking rhythm stage ribs along wide wings
+    const beatSpeedRad = (bpm / 60) * Math.PI;
+    for (let s = 0; s < sideRibPerSide; s++) {
+      const zPos = -24 + s * 2.5;
+      const xOffset = 7.4 + (s % 4) * 2.8;
+      const pulse =
+        ctx.calmMode || snap?.paused
+          ? 0.45
+          : 0.55 + Math.abs(Math.sin(elapsedSec * beatSpeedRad + s * 0.65)) * 1.65;
+      SCRATCH_QUAT.identity();
+      SCRATCH_VEC3_B.set(1, pulse, 1);
+
+      SCRATCH_VEC3_A.set(-xOffset, pulse * 0.5 - 0.22, zPos);
+      SCRATCH_MAT4.compose(SCRATCH_VEC3_A, SCRATCH_QUAT, SCRATCH_VEC3_B);
+      sideRibInstanced.setMatrixAt(s * 2, SCRATCH_MAT4);
+
+      SCRATCH_VEC3_A.set(xOffset, pulse * 0.5 - 0.22, zPos);
+      SCRATCH_MAT4.compose(SCRATCH_VEC3_A, SCRATCH_QUAT, SCRATCH_VEC3_B);
+      sideRibInstanced.setMatrixAt(s * 2 + 1, SCRATCH_MAT4);
+    }
+    sideRibInstanced.instanceMatrix.needsUpdate = true;
 
     // 2. Lane receptor flashes
     if (snap) {
@@ -418,7 +668,13 @@ export function mountScene(ctx: LazyThreeMountContext): LazyThreeSceneHandle {
     sparkInstanced.instanceMatrix.needsUpdate = true;
     if (sparkInstanced.instanceColor) sparkInstanced.instanceColor.needsUpdate = true;
 
-    pipeline.render();
+    if (realisticPost) {
+      realisticPost.render(dtSec);
+    } else if (legacyPipeline) {
+      legacyPipeline.render();
+    } else {
+      renderer.render(scene, camera);
+    }
   };
 
   const loop = createCappedLoop({
@@ -440,14 +696,28 @@ export function mountScene(ctx: LazyThreeMountContext): LazyThreeSceneHandle {
           : ctx.preset.sceneFrameCap,
       );
     },
-    resize(width: number, height: number) {
-      managed.resize(width, height, camera, baseFov);
-      pipeline.resize(width, height);
+    resize(w: number, h: number) {
+      managed.resize(w, h, camera, baseFov);
+      applyCameraFraming(w, h);
+      legacyPipeline?.resize(w, h);
+      realisticPost?.setSize(w, h, managed.pixelRatio);
     },
     dispose() {
+      disposed = true;
       loop.stop();
       wordSprites.dispose();
-      pipeline.dispose();
+      if (legacyPipeline) {
+        legacyPipeline.dispose();
+        legacyPipeline = null;
+      }
+      if (realisticPost) {
+        realisticPost.dispose();
+        realisticPost = null;
+      }
+      if (acquiredPbrSize) {
+        releaseSessionPbrTextures(acquiredPbrSize);
+        acquiredPbrSize = null;
+      }
       managed.dispose();
     },
   };

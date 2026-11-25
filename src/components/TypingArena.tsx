@@ -3,8 +3,9 @@ import {Pause, Play, RotateCcw} from 'lucide-react';
 import {soundEngine} from '@/src/audio/soundEngine';
 import {useAppearance} from '@/src/context/AppearanceContext';
 import {TypingEngine} from '@/src/engine/TypingEngine';
-import type {TextSize} from '@/src/types/app';
 import type {CompletedSessionStats, TypingTelemetrySnapshot} from '@/src/types/typing';
+import {computeTypingArenaLayout} from '@/src/utils/responsiveLayout';
+import {useScreenInfo} from '@/src/utils/screenInfo';
 
 interface TypingArenaProps {
   text: string;
@@ -17,20 +18,6 @@ interface TypingArenaProps {
   onRestart: () => void;
   onExtendText?: () => string | null;
 }
-
-const TEXT_SIZE_CLASS: Record<TextSize, string> = {
-  S: 'text-lg leading-[2.05]',
-  M: 'text-xl leading-[2.0]',
-  L: 'text-2xl leading-[1.95]',
-  XL: 'text-3xl leading-[1.85]',
-};
-
-const WINDOW_HEIGHT_PX: Record<TextSize, number> = {
-  S: 120,
-  M: 132,
-  L: 148,
-  XL: 176,
-};
 
 interface Particle {
   x: number;
@@ -76,6 +63,11 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
   onExtendText,
 }) => {
   const {settings} = useAppearance();
+  const screen = useScreenInfo();
+  const arenaLayout = useMemo(
+    () => computeTypingArenaLayout(screen, settings.textSize),
+    [screen, settings.textSize],
+  );
   const [renderedText, setRenderedText] = useState(text);
   const [paused, setPaused] = useState(false);
   const [tabPendingRestart, setTabPendingRestart] = useState(false);
@@ -89,9 +81,13 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
   const engineRef = useRef<TypingEngine | null>(null);
   const tabTimerRef = useRef<number | null>(null);
 
+  const prevTextPropRef = useRef(text);
+
   useEffect(() => {
-    setRenderedText(text);
+    if (prevTextPropRef.current === text) return;
+    prevTextPropRef.current = text;
     spanRefs.current = [];
+    setRenderedText(text);
   }, [text]);
 
   const setSpanRef = useCallback((el: HTMLSpanElement | null, idx: number) => {
@@ -188,13 +184,37 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
     return () => window.cancelAnimationFrame(id);
   }, [renderedText, settings.textSize, settings.fontChoice]);
 
-  // Recalculate caret position and wrapped line height on window resize
+  // Recalculate caret position and wrapped line height on root/container resize or scale changes
+  useEffect(() => {
+    const rafId = window.requestAnimationFrame(() => {
+      engineRef.current?.handleResize();
+    });
+    return () => window.cancelAnimationFrame(rafId);
+  }, [
+    arenaLayout.fontSizePx,
+    arenaLayout.viewportHeightPx,
+    screen.width,
+    screen.height,
+    screen.uiScale,
+    screen.layoutProfile,
+  ]);
+
   useEffect(() => {
     const onResize = () => {
       engineRef.current?.handleResize();
     };
     window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined' && viewportRef.current) {
+      ro = new ResizeObserver(() => {
+        window.requestAnimationFrame(() => engineRef.current?.handleResize());
+      });
+      ro.observe(viewportRef.current);
+    }
+    return () => {
+      window.removeEventListener('resize', onResize);
+      ro?.disconnect();
+    };
   }, []);
 
   // Pause automatically when browser tab becomes hidden
@@ -323,7 +343,15 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
   const chars = useMemo(() => renderedText.split(''), [renderedText]);
 
   return (
-    <div className="tv-surface relative rounded-2xl p-6 sm:p-8 space-y-5">
+    <div
+      className={`tv-surface relative w-full mx-auto rounded-2xl ${
+        arenaLayout.compactChrome ? 'space-y-2.5' : 'space-y-4'
+      }`}
+      style={{
+        padding: `${arenaLayout.cardPaddingPx}px`,
+        maxWidth: `${arenaLayout.maxCh}ch`,
+      }}
+    >
       {/* Subtle Particle Canvas Overlay */}
       <canvas
         ref={particleCanvasRef}
@@ -332,11 +360,14 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
       />
 
       {/* Arena Top Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 text-xs" style={{color: 'var(--tv-text-muted)'}}>
-        <span>
+      <div
+        className="flex flex-wrap items-center justify-between gap-2 text-xs"
+        style={{color: 'var(--tv-text-muted)'}}
+      >
+        <span className="truncate max-w-full">
           {modeLabel} · Target {targetWpm} WPM · {settings.backspaceMode} backspace
         </span>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           {tabPendingRestart && (
             <span
               className="rounded-md border px-2 py-1 font-medium"
@@ -376,58 +407,70 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
       {/* 3-Line Scrolling Viewport */}
       <div
         ref={viewportRef}
-        className="relative overflow-hidden select-none rounded-xl p-4 sm:p-5 border"
+        data-testid="typing-text-viewport"
+        className="relative select-none rounded-xl border"
         style={{
-          height: `${WINDOW_HEIGHT_PX[settings.textSize]}px`,
+          paddingBlock: `${arenaLayout.viewportPaddingY}px`,
+          paddingInline: `${arenaLayout.viewportPaddingX}px`,
           backgroundColor: 'var(--tv-bg)',
           borderColor: 'var(--tv-border)',
         }}
         aria-label="Typing passage"
       >
-        {/* GPU-composited animated caret */}
-        <span
-          ref={caretRef}
-          aria-hidden="true"
-          className="pointer-events-none absolute top-0 left-0 z-10 transition-transform duration-75 ease-out"
+        <div
+          className="relative overflow-hidden"
           style={{
-            willChange: 'transform',
+            height: `${arenaLayout.threeLineClipHeightPx}px`,
           }}
         >
-          {settings.caretStyle === 'line' && (
-            <span
-              className="tv-caret-blink block w-[2.5px] h-full rounded-xs"
-              style={{
-                backgroundColor: 'var(--tv-accent)',
-                boxShadow: '0 0 10px var(--tv-accent)',
-              }}
-            />
-          )}
-          {settings.caretStyle === 'block' && (
-            <span
-              className="tv-caret-blink block w-full h-full rounded-xs"
-              style={{
-                backgroundColor: 'var(--tv-accent)',
-                opacity: 0.28,
-              }}
-            />
-          )}
-          {settings.caretStyle === 'underline' && (
-            <span
-              className="tv-caret-blink block w-full h-[3px] absolute bottom-0 left-0 rounded-xs"
-              style={{
-                backgroundColor: 'var(--tv-accent)',
-                boxShadow: '0 0 8px var(--tv-accent)',
-              }}
-            />
-          )}
-        </span>
+          {/* GPU-composited animated caret */}
+          <span
+            ref={caretRef}
+            aria-hidden="true"
+            className="pointer-events-none absolute top-0 left-0 z-10 transition-transform duration-75 ease-out"
+            style={{
+              willChange: 'transform',
+            }}
+          >
+            {settings.caretStyle === 'line' && (
+              <span
+                className="tv-caret-blink block w-[2.5px] h-full rounded-xs"
+                style={{
+                  backgroundColor: 'var(--tv-accent)',
+                  boxShadow: '0 0 10px var(--tv-accent)',
+                }}
+              />
+            )}
+            {settings.caretStyle === 'block' && (
+              <span
+                className="tv-caret-blink block w-full h-full rounded-xs"
+                style={{
+                  backgroundColor: 'var(--tv-accent)',
+                  opacity: 0.28,
+                }}
+              />
+            )}
+            {settings.caretStyle === 'underline' && (
+              <span
+                className="tv-caret-blink block w-full h-[3px] absolute bottom-0 left-0 rounded-xs"
+                style={{
+                  backgroundColor: 'var(--tv-accent)',
+                  boxShadow: '0 0 8px var(--tv-accent)',
+                }}
+              />
+            )}
+          </span>
 
-        {/* 3-line scrolling text container (compositor-only transform) */}
-        <div
-          ref={linesWrapperRef}
-          className={`font-typing flex flex-wrap gap-y-1 transition-transform duration-200 ease-out ${TEXT_SIZE_CLASS[settings.textSize]}`}
-          style={{willChange: 'transform'}}
-        >
+          {/* 3-line scrolling text container (compositor-only transform) */}
+          <div
+            ref={linesWrapperRef}
+            className="font-typing flex flex-wrap transition-transform duration-200 ease-out"
+            style={{
+              willChange: 'transform',
+              fontSize: `${arenaLayout.fontSizePx}px`,
+              lineHeight: arenaLayout.lineHeight,
+            }}
+          >
           {wordsWithOffsets.map((token, wIdx) => (
             <span key={wIdx} className="inline-flex whitespace-nowrap">
               {token.word.split('').map((ch, cOffset) => {
@@ -455,6 +498,7 @@ export const TypingArena: React.FC<TypingArenaProps> = ({
               )}
             </span>
           ))}
+        </div>
         </div>
 
         {/* Keep MemoCharList reference satisfied if unused */}

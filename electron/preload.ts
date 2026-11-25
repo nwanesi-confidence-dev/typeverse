@@ -15,6 +15,24 @@ const desktopApi = {
   setTitle: (title: string): void => {
     ipcRenderer.send('desktop:set-title', title);
   },
+  onDisplayMetricsChanged: (
+    callback: (info: {
+      scaleFactor: number;
+      workArea: {x: number; y: number; width: number; height: number};
+    }) => void,
+  ): (() => void) => {
+    const handler = (
+      _evt: Electron.IpcRendererEvent,
+      payload: {
+        scaleFactor: number;
+        workArea: {x: number; y: number; width: number; height: number};
+      },
+    ) => {
+      callback(payload);
+    };
+    ipcRenderer.on('desktop:display-metrics-changed', handler);
+    return () => ipcRenderer.removeListener('desktop:display-metrics-changed', handler);
+  },
   hwAccel: {
     getDisabled: (): Promise<boolean> => ipcRenderer.invoke('desktop:get-hw-accel-disabled'),
     getGpuFeatureStatus: (): Promise<Record<string, string>> =>

@@ -9,6 +9,7 @@ import {
   type ExhaustParticle2D,
 } from '@/src/arcade/renderer-2d/TurboRacer2D';
 import {TurboRacer3D} from '@/src/arcade/renderer-3d/TurboRacer3D';
+import {useCanvas2DResizeObserver} from '@/src/arcade/usePlayfieldSize';
 import {soundEngine} from '@/src/audio/soundEngine';
 import {
   DIFFICULTY_META,
@@ -41,6 +42,7 @@ export const TurboRacerGame: React.FC<ArcadeCommonProps> = ({
     lockedMode,
     show3D,
     webgl2Supported,
+    isSoftwareRenderer,
     contextLostOpen,
     webglRetryNonce,
     markContextLost,
@@ -184,6 +186,26 @@ export const TurboRacerGame: React.FC<ArcadeCommonProps> = ({
     };
   }, [lockedMode, onFinish, onExit]);
 
+  const render2DFrame = useCallback(
+    (dtSec: number) => {
+      if (show3D || !canvasRef.current) return;
+      const eng = engineRef.current;
+      renderTurboRacer2D({
+        canvas: canvasRef.current,
+        state: eng.state as TurboRacerState,
+        totalWords: eng.wordSeq.length,
+        particles: particles2DRef.current,
+        dtSec,
+        reducedMotion,
+        resolvedMode: lockedMode,
+        isSoftwareRenderer,
+      });
+    },
+    [show3D, reducedMotion, lockedMode, isSoftwareRenderer],
+  );
+
+  useCanvas2DResizeObserver(canvasRef, !show3D, () => render2DFrame(0));
+
   useEffect(() => {
     let raf = 0;
     let lastTs = performance.now();
@@ -196,16 +218,7 @@ export const TurboRacerGame: React.FC<ArcadeCommonProps> = ({
       const eng = engineRef.current;
       eng.step(dt);
 
-      if (!show3D && canvasRef.current) {
-        renderTurboRacer2D({
-          canvas: canvasRef.current,
-          state: eng.state as TurboRacerState,
-          totalWords: eng.wordSeq.length,
-          particles: particles2DRef.current,
-          dtSec: dt,
-          reducedMotion,
-        });
-      }
+      render2DFrame(dt);
 
       if (now - lastHudEmit >= 33) {
         lastHudEmit = now;
@@ -225,7 +238,7 @@ export const TurboRacerGame: React.FC<ArcadeCommonProps> = ({
 
     raf = window.requestAnimationFrame(frame);
     return () => window.cancelAnimationFrame(raf);
-  }, [reducedMotion, show3D, onTelemetry]);
+  }, [render2DFrame, show3D, onTelemetry]);
 
   const racer3DState: TurboRacer3DState = useMemo(
     () => ({
@@ -246,18 +259,18 @@ export const TurboRacerGame: React.FC<ArcadeCommonProps> = ({
   };
 
   return (
-    <div className="tv-surface rounded-2xl p-5 space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="text-xs font-medium flex flex-wrap items-center gap-2" style={{color: 'var(--tv-text-muted)'}}>
-          <span>Turbo Racer · {DIFFICULTY_META[difficulty].label} · Type each word plus Space to surge past rivals</span>
+    <div className="tv-surface rounded-2xl p-3 sm:p-4 flex flex-col gap-2.5 flex-1 min-h-0">
+      <div className="shrink-0 flex flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0 text-xs font-medium flex flex-wrap items-center gap-2" style={{color: 'var(--tv-text-muted)'}}>
+          <span className="truncate">Turbo Racer · {DIFFICULTY_META[difficulty].label} · Type each word plus Space to surge past rivals</span>
           <span
-            className="rounded-md border px-2 py-0.5 text-[11px] font-semibold"
+            className="rounded-md border px-2 py-0.5 text-[11px] font-semibold shrink-0"
             style={{borderColor: 'var(--tv-border)', backgroundColor: 'var(--tv-bg)'}}
           >
             {formatResolvedModeLabel(lockedMode)}
           </span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
             onClick={togglePause}
@@ -292,7 +305,7 @@ export const TurboRacerGame: React.FC<ArcadeCommonProps> = ({
         />
       )}
 
-      <div className="relative rounded-xl overflow-hidden border" style={{borderColor: 'var(--tv-border)'}}>
+      <div className="relative flex-1 min-h-[180px] rounded-xl overflow-hidden border" style={{borderColor: 'var(--tv-border)'}}>
         {show3D ? (
           <TurboRacer3D
             gameId="turbo-racer"
@@ -310,7 +323,7 @@ export const TurboRacerGame: React.FC<ArcadeCommonProps> = ({
         ) : (
           <canvas
             ref={canvasRef}
-            className="block w-full h-64 sm:h-72"
+            className="block w-full h-full"
             aria-label="Turbo Racer track canvas"
           />
         )}
@@ -341,13 +354,18 @@ export const TurboRacerGame: React.FC<ArcadeCommonProps> = ({
       </div>
 
       <div
-        className={`rounded-xl border px-5 py-4 flex flex-wrap items-center gap-4 ${flashErr ? 'tv-char-shake' : ''}`}
+        data-testid="typing-text-viewport"
+        className={`shrink-0 rounded-xl border px-4 py-2.5 sm:px-5 sm:py-3.5 flex flex-wrap items-center gap-3 sm:gap-4 ${flashErr ? 'tv-char-shake' : ''}`}
         style={{
           backgroundColor: 'var(--tv-bg)',
           borderColor: flashErr ? 'var(--tv-error)' : 'var(--tv-border)',
         }}
+        aria-label="Active word prompt"
       >
-        <div className="font-typing text-2xl sm:text-3xl font-bold tracking-wide">
+        <div
+          className="font-typing font-bold tracking-wide"
+          style={{fontSize: 'clamp(1.25rem, calc(1.5rem * var(--ui-scale)), 2.25rem)'}}
+        >
           <span style={{color: 'var(--tv-success)'}}>{typedPrefix}</span>
           <span
             className="underline decoration-2 underline-offset-4"
@@ -356,7 +374,13 @@ export const TurboRacerGame: React.FC<ArcadeCommonProps> = ({
             {currentWord.slice(typedPrefix.length)}
           </span>
         </div>
-        <div className="font-typing text-lg flex flex-wrap gap-3" style={{color: 'var(--tv-text-muted)'}}>
+        <div
+          className="font-typing flex flex-wrap gap-3 truncate"
+          style={{
+            color: 'var(--tv-text-muted)',
+            fontSize: 'clamp(0.95rem, calc(1.05rem * var(--ui-scale)), 1.4rem)',
+          }}
+        >
           {upcomingWords.map((w, idx) => (
             <span key={`${w}-${idx}`}>{w}</span>
           ))}

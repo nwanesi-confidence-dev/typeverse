@@ -14,6 +14,7 @@ import {ThreeCanvasHost} from '@/src/three/ThreeCanvasHost';
 import type {ResultsTrophyState} from '@/src/three/scenes/resultsTrophyScene';
 import type {CompletedSessionStats} from '@/src/types/typing';
 import {downloadCertificatePng} from '@/src/utils/certificate';
+import {useScreenInfo} from '@/src/utils/screenInfo';
 
 const loadResultsTrophyScene = () =>
   import('@/src/three/scenes/resultsTrophyScene');
@@ -36,11 +37,18 @@ export const SessionResults: React.FC<SessionResultsProps> = ({
   showCertificate = true,
 }) => {
   const {settings, copy} = useAppearance();
+  const screen = useScreenInfo();
   const gfx = useGraphicsMode();
   const show3DTrophy =
     gfx.effectiveMode !== '2d' &&
     gfx.hardwareReport.webglSupported &&
     gfx.hardwareReport.webgl2Supported;
+
+  const isDense = screen.layoutProfile === 'compact' || screen.height < 740;
+  const kpiCols = screen.width < 600 ? 2 : screen.width < 920 ? 3 : 6;
+  const splitChartAndKeys = screen.width >= 900 && !screen.showSidePanels
+    ? true
+    : screen.width >= 1900;
 
   const trophyState: ResultsTrophyState = useMemo(
     () => ({
@@ -155,7 +163,10 @@ export const SessionResults: React.FC<SessionResultsProps> = ({
 
   return (
     <section
-      className="tv-surface tv-dash-card relative overflow-hidden rounded-2xl p-6 sm:p-8 space-y-6"
+      data-testid="session-results"
+      className={`tv-surface tv-dash-card relative overflow-hidden rounded-2xl ${
+        isDense ? 'p-4 space-y-4' : 'p-6 space-y-5'
+      }`}
       aria-label="Session Results"
     >
       {!show3DTrophy && stats.isNewBest && (
@@ -169,7 +180,7 @@ export const SessionResults: React.FC<SessionResultsProps> = ({
       {/* Procedural 3D Trophy / Medal & Instanced Confetti Banner */}
       {show3DTrophy && (
         <div
-          className="relative z-20 h-40 sm:h-44 w-full rounded-xl border overflow-hidden"
+          className={`relative z-20 ${isDense ? 'h-32' : 'h-40'} w-full rounded-xl border overflow-hidden`}
           style={{backgroundColor: 'var(--tv-bg)', borderColor: 'var(--tv-border)'}}
         >
           <ThreeCanvasHost
@@ -189,8 +200,8 @@ export const SessionResults: React.FC<SessionResultsProps> = ({
       )}
 
       {/* Header Row */}
-      <div className="relative z-20 flex flex-wrap items-center justify-between gap-4 pb-5 border-b" style={{borderColor: 'var(--tv-border)'}}>
-        <div className="space-y-1">
+      <div className="relative z-20 flex flex-wrap items-center justify-between gap-4 pb-4 border-b" style={{borderColor: 'var(--tv-border)'}}>
+        <div className="space-y-1 min-w-0">
           <div className="text-xs font-medium flex flex-wrap items-center gap-2" style={{color: 'var(--tv-accent)'}}>
             <span>{stats.subMode} Complete · +{stats.xpEarned} XP</span>
             {stats.playedVisuals && (
@@ -206,7 +217,7 @@ export const SessionResults: React.FC<SessionResultsProps> = ({
               </span>
             )}
           </div>
-          <h2 className="font-display text-3xl font-bold tracking-tight flex items-center gap-3">
+          <h2 className="font-display font-bold tracking-tight flex flex-wrap items-center gap-3" style={{fontSize: 'var(--tv-text-xl)'}}>
             <span>Session Summary</span>
             {stats.isNewBest && (
               <span
@@ -225,11 +236,11 @@ export const SessionResults: React.FC<SessionResultsProps> = ({
         </div>
 
         {/* 1-3 Stars */}
-        <div className="flex items-center gap-1.5" aria-label={`${stats.stars} out of 3 stars`}>
+        <div className="flex items-center gap-1.5 shrink-0" aria-label={`${stats.stars} out of 3 stars`}>
           {[1, 2, 3].map((n) => (
             <Star
               key={n}
-              className="w-7 h-7"
+              className="w-6 h-6"
               fill={n <= stats.stars ? '#FBBF24' : 'transparent'}
               stroke={n <= stats.stars ? '#FBBF24' : 'var(--tv-border)'}
               aria-hidden="true"
@@ -252,13 +263,16 @@ export const SessionResults: React.FC<SessionResultsProps> = ({
       )}
 
       {/* Primary KPI Grid */}
-      <div className="relative z-20 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        <div className="rounded-xl border p-4" style={{backgroundColor: 'var(--tv-bg)', borderColor: 'var(--tv-border)'}}>
+      <div
+        className="relative z-20 grid gap-3"
+        style={{gridTemplateColumns: `repeat(${kpiCols}, minmax(0, 1fr))`}}
+      >
+        <div className="rounded-xl border p-3.5" style={{backgroundColor: 'var(--tv-bg)', borderColor: 'var(--tv-border)'}}>
           <div className="text-xs" style={{color: 'var(--tv-text-muted)'}}>Net WPM</div>
-          <div className="font-typing text-3xl font-bold tabular-nums mt-1" style={{color: 'var(--tv-accent)'}}>
+          <div className="font-typing text-2xl font-bold tabular-nums mt-1" style={{color: 'var(--tv-accent)'}}>
             {displayWpm}
           </div>
-          <div className="text-[11px] mt-1" style={{color: 'var(--tv-text-muted)'}}>
+          <div className="text-[11px] mt-1 truncate" style={{color: 'var(--tv-text-muted)'}}>
             {stats.previousBestWpm > 0
               ? stats.netWpm >= stats.previousBestWpm
                 ? `+${stats.netWpm - stats.previousBestWpm} vs PB`
@@ -267,63 +281,70 @@ export const SessionResults: React.FC<SessionResultsProps> = ({
           </div>
         </div>
 
-        <div className="rounded-xl border p-4" style={{backgroundColor: 'var(--tv-bg)', borderColor: 'var(--tv-border)'}}>
+        <div className="rounded-xl border p-3.5" style={{backgroundColor: 'var(--tv-bg)', borderColor: 'var(--tv-border)'}}>
           <div className="text-xs" style={{color: 'var(--tv-text-muted)'}}>Gross WPM</div>
-          <div className="font-typing text-3xl font-bold tabular-nums mt-1">
+          <div className="font-typing text-2xl font-bold tabular-nums mt-1">
             {stats.grossWpm}
           </div>
-          <div className="text-[11px] mt-1 tabular-nums" style={{color: 'var(--tv-text-muted)'}}>
+          <div className="text-[11px] mt-1 tabular-nums truncate" style={{color: 'var(--tv-text-muted)'}}>
             {stats.cpm} CPM
           </div>
         </div>
 
-        <div className="rounded-xl border p-4" style={{backgroundColor: 'var(--tv-bg)', borderColor: 'var(--tv-border)'}}>
+        <div className="rounded-xl border p-3.5" style={{backgroundColor: 'var(--tv-bg)', borderColor: 'var(--tv-border)'}}>
           <div className="text-xs" style={{color: 'var(--tv-text-muted)'}}>Accuracy</div>
-          <div className="font-typing text-3xl font-bold tabular-nums mt-1" style={{color: 'var(--tv-success)'}}>
+          <div className="font-typing text-2xl font-bold tabular-nums mt-1" style={{color: 'var(--tv-success)'}}>
             {displayAcc.toFixed(1)}%
           </div>
-          <div className="text-[11px] mt-1 tabular-nums" style={{color: 'var(--tv-text-muted)'}}>
+          <div className="text-[11px] mt-1 tabular-nums truncate" style={{color: 'var(--tv-text-muted)'}}>
             {stats.correctKeystrokes}/{stats.totalKeystrokes} keys
           </div>
         </div>
 
-        <div className="rounded-xl border p-4" style={{backgroundColor: 'var(--tv-bg)', borderColor: 'var(--tv-border)'}}>
+        <div className="rounded-xl border p-3.5" style={{backgroundColor: 'var(--tv-bg)', borderColor: 'var(--tv-border)'}}>
           <div className="text-xs" style={{color: 'var(--tv-text-muted)'}}>Errors</div>
-          <div className="font-typing text-3xl font-bold tabular-nums mt-1" style={{color: stats.errors > 0 ? 'var(--tv-error)' : 'var(--tv-text)'}}>
+          <div className="font-typing text-2xl font-bold tabular-nums mt-1" style={{color: stats.errors > 0 ? 'var(--tv-error)' : 'var(--tv-text)'}}>
             {stats.errors}
           </div>
-          <div className="text-[11px] mt-1 tabular-nums" style={{color: 'var(--tv-text-muted)'}}>
+          <div className="text-[11px] mt-1 tabular-nums truncate" style={{color: 'var(--tv-text-muted)'}}>
             {stats.uncorrectedErrors} uncorrected
           </div>
         </div>
 
-        <div className="rounded-xl border p-4" style={{backgroundColor: 'var(--tv-bg)', borderColor: 'var(--tv-border)'}}>
+        <div className="rounded-xl border p-3.5" style={{backgroundColor: 'var(--tv-bg)', borderColor: 'var(--tv-border)'}}>
           <div className="text-xs" style={{color: 'var(--tv-text-muted)'}}>Consistency</div>
-          <div className="font-typing text-3xl font-bold tabular-nums mt-1">
+          <div className="font-typing text-2xl font-bold tabular-nums mt-1">
             {stats.consistency}%
           </div>
-          <div className="text-[11px] mt-1" style={{color: 'var(--tv-text-muted)'}}>
+          <div className="text-[11px] mt-1 truncate" style={{color: 'var(--tv-text-muted)'}}>
             Speed stability
           </div>
         </div>
 
-        <div className="rounded-xl border p-4" style={{backgroundColor: 'var(--tv-bg)', borderColor: 'var(--tv-border)'}}>
+        <div className="rounded-xl border p-3.5" style={{backgroundColor: 'var(--tv-bg)', borderColor: 'var(--tv-border)'}}>
           <div className="text-xs" style={{color: 'var(--tv-text-muted)'}}>Time</div>
-          <div className="font-typing text-3xl font-bold tabular-nums mt-1">
+          <div className="font-typing text-2xl font-bold tabular-nums mt-1">
             {stats.durationSec}s
           </div>
-          <div className="text-[11px] mt-1 tabular-nums" style={{color: 'var(--tv-text-muted)'}}>
+          <div className="text-[11px] mt-1 tabular-nums truncate" style={{color: 'var(--tv-text-muted)'}}>
             {stats.wordsTyped} words
           </div>
         </div>
       </div>
 
       {/* WPM-over-time SVG Chart + Slowest Keys */}
-      <div className="relative z-20 grid grid-cols-1 lg:grid-cols-12 gap-5">
-        <div className="lg:col-span-8 rounded-xl border p-4 space-y-2" style={{backgroundColor: 'var(--tv-bg)', borderColor: 'var(--tv-border)'}}>
-          <div className="flex items-center justify-between text-xs" style={{color: 'var(--tv-text-muted)'}}>
+      <div
+        className="relative z-20 grid gap-4"
+        style={{
+          gridTemplateColumns: splitChartAndKeys
+            ? 'minmax(0, 2fr) minmax(0, 1fr)'
+            : 'minmax(0, 1fr)',
+        }}
+      >
+        <div className="rounded-xl border p-4 space-y-2 min-w-0" style={{backgroundColor: 'var(--tv-bg)', borderColor: 'var(--tv-border)'}}>
+          <div className="flex items-center justify-between text-xs gap-2" style={{color: 'var(--tv-text-muted)'}}>
             <span className="font-semibold" style={{color: 'var(--tv-text)'}}>WPM Over Time</span>
-            <span>Peak {Math.max(...(stats.wpmOverTime.length ? stats.wpmOverTime : [stats.netWpm]))} WPM · {chartData.count}s samples</span>
+            <span className="truncate">Peak {Math.max(...(stats.wpmOverTime.length ? stats.wpmOverTime : [stats.netWpm]))} WPM · {chartData.count}s samples</span>
           </div>
           <svg viewBox="0 0 560 150" className="w-full h-36 overflow-visible" aria-label="WPM over time chart">
             <line x1="16" y1="134" x2="544" y2="134" stroke="var(--tv-border)" strokeWidth="1" />
@@ -351,7 +372,7 @@ export const SessionResults: React.FC<SessionResultsProps> = ({
           </svg>
         </div>
 
-        <div className="lg:col-span-4 rounded-xl border p-4 space-y-3" style={{backgroundColor: 'var(--tv-bg)', borderColor: 'var(--tv-border)'}}>
+        <div className="rounded-xl border p-4 space-y-3 min-w-0" style={{backgroundColor: 'var(--tv-bg)', borderColor: 'var(--tv-border)'}}>
           <div className="text-xs font-semibold">Slowest Keys</div>
           {stats.slowestKeys.length === 0 ? (
             <p className="text-xs" style={{color: 'var(--tv-text-muted)'}}>

@@ -628,8 +628,10 @@ export class TypingEngine {
       i <= Math.min(this.charSpans.length - 1, this.typedIndex + 2);
       i++
     ) {
-      if (i === this.typedIndex) this.charSpans[i].dataset.active = 'true';
-      else delete this.charSpans[i].dataset.active;
+      const span = this.charSpans[i];
+      if (!span) continue;
+      if (i === this.typedIndex) span.dataset.active = 'true';
+      else delete span.dataset.active;
     }
 
     const targetSpan =

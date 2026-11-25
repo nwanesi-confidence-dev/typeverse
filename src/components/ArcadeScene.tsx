@@ -32,12 +32,9 @@ import {
 } from '@/src/db/storage';
 import type {ProfileProgress} from '@/src/types/app';
 import type {CompletedSessionStats, TypingTelemetrySnapshot} from '@/src/types/typing';
-import {
-  extractFreshPackIdsFromEntryIds,
-  markFreshPacksUsed,
-  maybePrefetchFreshPack,
-} from '@/src/utils/freshWordsClient';
-import {recordSessionAndBadges} from '@/src/utils/progression';
+import {extractFreshPackIdsFromEntryIds, markFreshPacksUsed, maybePrefetchFreshPack} from '@/src/utils/freshWordsClient';
+import {getTodayActivitySeconds, recordSessionAndBadges} from '@/src/utils/progression';
+import {useScreenInfo} from '@/src/utils/screenInfo';
 
 interface ArcadeSceneProps {
   onBack: () => void;
@@ -98,6 +95,7 @@ export const ArcadeScene: React.FC<ArcadeSceneProps> = ({
   activeProfileId,
 }) => {
   const {settings} = useAppearance();
+  const screen = useScreenInfo();
   const [selectedGame, setSelectedGame] = useState<ArcadeGameId | null>(null);
   const [difficulty, setDifficulty] = useState<ArcadeDifficulty>('medium');
   const [wordPool, setWordPool] = useState<string[]>([]);
@@ -187,12 +185,22 @@ export const ArcadeScene: React.FC<ArcadeSceneProps> = ({
   };
 
   const isFocus = settings.layout === 'focus';
+  const isActiveGame = Boolean(selectedGame && !results);
+  const compactPlayHud = screen.layoutProfile === 'compact' || screen.height < 740;
+  const gridCols =
+    screen.width < 680 ? 1 : screen.width < 1120 ? 2 : screen.width >= 2100 ? 5 : 3;
 
   return (
-    <main className="mx-auto max-w-[1320px] px-4 py-6 sm:px-6 space-y-5">
+    <main
+      className={`tv-fluid-container ${
+        isActiveGame
+          ? 'h-full min-h-0 flex flex-col gap-2.5 py-2.5 sm:py-4 overflow-hidden'
+          : 'py-5 sm:py-6 space-y-5'
+      }`}
+    >
       {!isFocus && (
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="space-y-1">
+        <div className={`shrink-0 flex flex-wrap items-center justify-between gap-3`}>
+          <div className="min-w-0 space-y-0.5">
             <button
               type="button"
               onClick={() => {
@@ -211,14 +219,24 @@ export const ArcadeScene: React.FC<ArcadeSceneProps> = ({
               <ArrowLeft className="w-3.5 h-3.5" aria-hidden="true" />
               <span>{selectedGame ? 'All Arcade Games' : 'Back to Hub (Esc)'}</span>
             </button>
-            <h1 className="font-display text-3xl font-bold tracking-tight">Arcade</h1>
-            <p className="text-sm" style={{color: 'var(--tv-text-muted)'}}>
-              Five offline-ready 3D &amp; Classic 2D games with live WPM telemetry and three difficulty tiers.
-            </p>
+            <div className="flex flex-wrap items-baseline gap-2.5">
+              <h1
+                className={`font-display font-bold tracking-tight ${
+                  isActiveGame ? 'text-xl sm:text-2xl' : 'text-2xl sm:text-3xl'
+                }`}
+              >
+                Arcade
+              </h1>
+              {!isActiveGame && (
+                <p className="text-xs sm:text-sm" style={{color: 'var(--tv-text-muted)'}}>
+                  Five offline-ready 3D &amp; Classic 2D games with live WPM telemetry and three difficulty tiers.
+                </p>
+              )}
+            </div>
           </div>
 
           <div
-            className="flex items-center gap-1 rounded-xl border p-1"
+            className="flex items-center gap-1 rounded-xl border p-1 shrink-0"
             style={{backgroundColor: 'var(--tv-surface)', borderColor: 'var(--tv-border)'}}
             role="group"
             aria-label="Arcade difficulty"
@@ -249,16 +267,22 @@ export const ArcadeScene: React.FC<ArcadeSceneProps> = ({
       )}
 
       {/* Live WPM Meter HUD — visible in EVERY arcade mode */}
-      <WpmHud
-        telemetry={telemetry}
-        personalBestWpm={progress?.bestWpm ?? 0}
-        targetWpm={progress?.targetWpm ?? 60}
-      />
+      <div className="shrink-0">
+        <WpmHud
+          telemetry={telemetry}
+          personalBestWpm={progress?.bestWpm ?? 0}
+          targetWpm={progress?.targetWpm ?? 60}
+          dailyGoalMinutes={progress?.dailyGoalMinutes ?? 15}
+          todayActivitySeconds={getTodayActivitySeconds(progress)}
+          compact={isActiveGame && compactPlayHud}
+        />
+      </div>
 
       {/* Game Selector Grid OR Active Game OR Results */}
       {!selectedGame ? (
         <section
-          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5"
+          className="grid gap-5"
+          style={{gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))`}}
           aria-label="Arcade games"
         >
           {ARCADE_GAMES.map((game) => {
@@ -334,7 +358,7 @@ export const ArcadeScene: React.FC<ArcadeSceneProps> = ({
           }}
         />
       ) : (
-        <>
+        <div className="flex-1 min-h-0 flex flex-col">
           {selectedGame === 'turbo-racer' && (
             <TurboRacerGame
               key={`racer-${difficulty}-${sessionNonce}`}
@@ -400,7 +424,7 @@ export const ArcadeScene: React.FC<ArcadeSceneProps> = ({
               onExit={() => setSelectedGame(null)}
             />
           )}
-        </>
+        </div>
       )}
     </main>
   );

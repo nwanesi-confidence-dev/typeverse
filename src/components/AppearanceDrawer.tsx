@@ -32,7 +32,8 @@ import type {
   FontChoice,
   GraphicsDetailLevel,
   GraphicsModePreference,
-  LayoutDensity,
+  InterfaceSizePreference,
+  LayoutPreference,
   RealisticRenderScale,
   SpellingVariant,
   TextSize,
@@ -50,6 +51,11 @@ import {
   subscribeFreshWordsStatus,
   type FreshWordsStatus,
 } from '@/src/utils/freshWordsClient';
+import {
+  LAYOUT_TESTER_PRESETS,
+  screenInfoService,
+  useScreenInfo,
+} from '@/src/utils/screenInfo';
 
 interface AppearanceDrawerProps {
   open: boolean;
@@ -72,6 +78,7 @@ export const AppearanceDrawer: React.FC<AppearanceDrawerProps> = ({
   const isDesktop = typeof window !== 'undefined' && Boolean(window.desktop?.isDesktop);
   const {settings, updateSetting, resetSettings, copy} = useAppearance();
   const gfx = useGraphicsMode();
+  const screen = useScreenInfo();
   const [freshStatus, setFreshStatus] = useState<FreshWordsStatus | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshNote, setRefreshNote] = useState<string | null>(null);
@@ -82,7 +89,9 @@ export const AppearanceDrawer: React.FC<AppearanceDrawerProps> = ({
   const [urlError, setUrlError] = useState<string | null>(null);
   const [dataNote, setDataNote] = useState<string | null>(null);
   const [showGraphicsInfo, setShowGraphicsInfo] = useState(false);
+  const [showDisplayInfo, setShowDisplayInfo] = useState(false);
   const [reportCopied, setReportCopied] = useState(false);
+  const [displayCopied, setDisplayCopied] = useState(false);
   const [detailPreviewOpen, setDetailPreviewOpen] = useState(false);
   const [texPrep, setTexPrep] = useState<TexturePrepStatus>({
     preparing: false,
@@ -194,7 +203,9 @@ export const AppearanceDrawer: React.FC<AppearanceDrawerProps> = ({
       onClick={onClose}
     >
       <aside
-        className="tv-surface h-full w-full max-w-md overflow-y-auto p-6 shadow-2xl space-y-6"
+        className={`tv-surface h-full w-[min(100%,28rem)] overflow-y-auto shadow-2xl space-y-6 ${
+          screen.width < 480 ? 'p-4' : 'p-6'
+        }`}
         onClick={(e) => e.stopPropagation()}
       >
         <div
@@ -317,19 +328,27 @@ export const AppearanceDrawer: React.FC<AppearanceDrawerProps> = ({
           </div>
         </section>
 
-        {/* Layout Density */}
-        <section className="space-y-2">
-          <h3 className="text-sm font-semibold">Layout</h3>
+        {/* Layout Profile & Wide Panels */}
+        <section className="space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold">Layout</h3>
+            <span className="text-[11px] font-typing" style={{color: 'var(--tv-text-muted)'}}>
+              Profile: {screen.layoutProfile}
+            </span>
+          </div>
           <div
-            className="grid grid-cols-3 gap-1.5 rounded-xl p-1 border"
+            className="grid grid-cols-4 gap-1 rounded-xl p-1 border"
             style={{backgroundColor: 'var(--tv-bg)', borderColor: 'var(--tv-border)'}}
+            role="group"
+            aria-label="Layout profile preference"
           >
             {(
               [
-                {id: 'comfortable', label: 'Comfortable'},
-                {id: 'compact', label: 'Compact'},
+                {id: 'auto', label: 'Auto'},
+                {id: 'standard', label: 'Standard'},
+                {id: 'wide', label: 'Wide'},
                 {id: 'focus', label: 'Focus'},
-              ] as Array<{id: LayoutDensity; label: string}>
+              ] as Array<{id: LayoutPreference; label: string}>
             ).map((opt) => {
               const active = settings.layout === opt.id;
               return (
@@ -345,6 +364,73 @@ export const AppearanceDrawer: React.FC<AppearanceDrawerProps> = ({
                     backgroundColor: active ? 'var(--tv-accent)' : 'transparent',
                     color: active ? 'var(--tv-accent-fg)' : 'var(--tv-text-muted)',
                   }}
+                  title={opt.id === 'focus' ? 'Centre column only' : undefined}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
+          {settings.layout === 'focus' && (
+            <p className="text-[11px]" style={{color: 'var(--tv-text-muted)'}}>
+              Focus: centre column only.
+            </p>
+          )}
+          <label className="flex items-center justify-between gap-3 cursor-pointer">
+            <span className="text-xs font-medium">
+              Wide-screen panels <span style={{color: 'var(--tv-text-muted)'}}>(stats &amp; heatmap on 21:9+)</span>
+            </span>
+            <input
+              type="checkbox"
+              checked={settings.widePanels}
+              onChange={(e) => {
+                soundEngine.playUiTap();
+                updateSetting('widePanels', e.target.checked);
+              }}
+              className="h-4 w-4 accent-current"
+              style={{color: 'var(--tv-accent)'}}
+            />
+          </label>
+        </section>
+
+        {/* Interface Size (multiplies --ui-scale) */}
+        <section className="space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold">Interface size</h3>
+            <span className="text-[11px] font-typing tabular-nums" style={{color: 'var(--tv-text-muted)'}}>
+              Scale: {screen.uiScale.toFixed(2)}×
+            </span>
+          </div>
+          <div
+            className="grid grid-cols-5 gap-1 rounded-xl p-1 border"
+            style={{backgroundColor: 'var(--tv-bg)', borderColor: 'var(--tv-border)'}}
+            role="group"
+            aria-label="Interface size preference"
+          >
+            {(
+              [
+                {id: 'auto', label: 'Auto'},
+                {id: 'small', label: 'Small'},
+                {id: 'medium', label: 'Med'},
+                {id: 'large', label: 'Large'},
+                {id: 'extra-large', label: 'XL'},
+              ] as Array<{id: InterfaceSizePreference; label: string}>
+            ).map((opt) => {
+              const active = settings.interfaceSize === opt.id;
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => {
+                    soundEngine.playUiTap();
+                    updateSetting('interfaceSize', opt.id);
+                  }}
+                  title={opt.id === 'extra-large' ? 'Extra large' : opt.label}
+                  className="rounded-lg px-1.5 py-2 text-[11px] font-medium whitespace-nowrap transition-colors"
+                  style={{
+                    backgroundColor: active ? 'var(--tv-accent)' : 'transparent',
+                    color: active ? 'var(--tv-accent-fg)' : 'var(--tv-text-muted)',
+                  }}
                 >
                   {opt.label}
                 </button>
@@ -354,7 +440,7 @@ export const AppearanceDrawer: React.FC<AppearanceDrawerProps> = ({
         </section>
 
         {/* Text Size & Caret */}
-        <div className="grid grid-cols-2 gap-4">
+        <div className={`grid gap-4 ${screen.width < 440 ? 'grid-cols-1' : 'grid-cols-2'}`}>
           <section className="space-y-2">
             <h3 className="text-sm font-semibold">Text Size</h3>
             <div
@@ -1092,6 +1178,169 @@ export const AppearanceDrawer: React.FC<AppearanceDrawerProps> = ({
                   </>
                 )}
               </button>
+            </div>
+          )}
+        </section>
+
+        {/* Settings -> Advanced -> Display info & Layout tester */}
+        <section
+          className="rounded-xl border p-4 space-y-3"
+          style={{
+            backgroundColor: 'var(--tv-bg)',
+            borderColor: 'var(--tv-border)',
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => {
+              soundEngine.playUiTap();
+              setShowDisplayInfo((prev) => !prev);
+            }}
+            aria-expanded={showDisplayInfo}
+            className="w-full flex items-center justify-between text-left"
+          >
+            <div>
+              <h3 className="text-sm font-semibold">Advanced: Display info &amp; Layout tester</h3>
+              <p className="text-[11px]" style={{color: 'var(--tv-text-muted)'}}>
+                Viewport scale, aspect profile &amp; emulate 21:9 / 32:9 / 4K screens
+              </p>
+            </div>
+            {showDisplayInfo ? (
+              <ChevronUp className="w-4 h-4 shrink-0" style={{color: 'var(--tv-text-muted)'}} aria-hidden="true" />
+            ) : (
+              <ChevronDown className="w-4 h-4 shrink-0" style={{color: 'var(--tv-text-muted)'}} aria-hidden="true" />
+            )}
+          </button>
+
+          {showDisplayInfo && (
+            <div className="space-y-3 pt-2 border-t text-xs" style={{borderColor: 'var(--tv-border)'}}>
+              <dl className="grid grid-cols-1 gap-1.5 font-typing text-[11px]">
+                <div className="flex justify-between gap-2">
+                  <dt style={{color: 'var(--tv-text-muted)'}}>Viewport size</dt>
+                  <dd className="tabular-nums text-right">
+                    {screen.width} × {screen.height} px
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <dt style={{color: 'var(--tv-text-muted)'}}>Aspect ratio</dt>
+                  <dd className="tabular-nums text-right">
+                    {screen.aspectRatio.toFixed(2)}:1 ({screen.aspectClass})
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <dt style={{color: 'var(--tv-text-muted)'}}>Device pixel ratio</dt>
+                  <dd className="tabular-nums text-right">
+                    {screen.devicePixelRatio.toFixed(2)}×
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <dt style={{color: 'var(--tv-text-muted)'}}>Size class</dt>
+                  <dd className="text-right">{screen.sizeClass}</dd>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <dt style={{color: 'var(--tv-text-muted)'}}>Layout profile</dt>
+                  <dd className="text-right">
+                    {screen.layoutProfile}
+                    {screen.showSidePanels ? ' (panels on)' : ''}
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <dt style={{color: 'var(--tv-text-muted)'}}>--ui-scale</dt>
+                  <dd className="tabular-nums text-right">
+                    {screen.uiScale.toFixed(3)}×
+                  </dd>
+                </div>
+              </dl>
+
+              <button
+                type="button"
+                onClick={() => {
+                  soundEngine.playUiTap();
+                  const text = screenInfoService.buildDisplayReport(screen);
+                  void navigator.clipboard?.writeText(text).then(() => {
+                    setDisplayCopied(true);
+                    window.setTimeout(() => setDisplayCopied(false), 1800);
+                  });
+                }}
+                className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold"
+                style={{
+                  borderColor: 'var(--tv-accent)',
+                  backgroundColor: 'var(--tv-surface)',
+                  color: 'var(--tv-accent)',
+                }}
+              >
+                {displayCopied ? (
+                  <>
+                    <Check className="w-3.5 h-3.5" aria-hidden="true" />
+                    <span>Copied display report</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5" aria-hidden="true" />
+                    <span>Copy report</span>
+                  </>
+                )}
+              </button>
+
+              <div className="pt-2 border-t space-y-2" style={{borderColor: 'var(--tv-border)'}}>
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-xs">Layout tester</span>
+                  {screen.emulatedSize && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        soundEngine.playUiTap();
+                        screenInfoService.setEmulatedSize(null);
+                      }}
+                      className="text-[11px] font-semibold underline"
+                      style={{color: 'var(--tv-error)'}}
+                    >
+                      Exit tester
+                    </button>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 gap-1.5">
+                  {LAYOUT_TESTER_PRESETS.map((preset) => {
+                    const active =
+                      screen.emulatedSize?.width === preset.width &&
+                      screen.emulatedSize?.height === preset.height;
+                    return (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        onClick={() => {
+                          soundEngine.playUiTap();
+                          screenInfoService.setEmulatedSize(preset);
+                        }}
+                        className="flex items-center justify-between rounded-lg border px-2.5 py-1.5 text-[11px] font-typing transition-colors"
+                        style={{
+                          borderColor: active ? 'var(--tv-accent)' : 'var(--tv-border)',
+                          backgroundColor: active ? 'var(--tv-surface-elevated)' : 'var(--tv-surface)',
+                          color: active ? 'var(--tv-accent)' : 'var(--tv-text)',
+                        }}
+                      >
+                        <span>{preset.label}</span>
+                        <span style={{color: 'var(--tv-text-muted)'}}>{preset.tag}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <label className="flex items-center justify-between gap-2 text-xs cursor-pointer pt-1">
+                  <span>Fit to window</span>
+                  <input
+                    type="checkbox"
+                    checked={screen.fitToWindow}
+                    onChange={(e) => {
+                      soundEngine.playUiTap();
+                      screenInfoService.setFitToWindow(e.target.checked);
+                    }}
+                    className="h-4 w-4 accent-current"
+                    style={{color: 'var(--tv-accent)'}}
+                  />
+                </label>
+              </div>
             </div>
           )}
         </section>

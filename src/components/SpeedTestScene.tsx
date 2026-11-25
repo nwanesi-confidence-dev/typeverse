@@ -1,6 +1,11 @@
 import React, {useCallback, useEffect, useRef, useState} from 'react';
-import {ArrowLeft} from 'lucide-react';
+import {ArrowLeft, SlidersHorizontal} from 'lucide-react';
 import {soundEngine} from '@/src/audio/soundEngine';
+import {AdaptiveSceneLayout} from '@/src/components/AdaptiveSceneLayout';
+import {
+  CompactKeyHeatmapPanel,
+  LiveSessionStatsPanel,
+} from '@/src/components/LiveSessionSidePanels';
 import {SessionResults} from '@/src/components/SessionResults';
 import {TypingArena} from '@/src/components/TypingArena';
 import {WpmHud} from '@/src/components/WpmHud';
@@ -19,7 +24,8 @@ import {
   markFreshPacksUsed,
   maybePrefetchFreshPack,
 } from '@/src/utils/freshWordsClient';
-import {recordSessionAndBadges} from '@/src/utils/progression';
+import {getTodayActivitySeconds, recordSessionAndBadges} from '@/src/utils/progression';
+import {useScreenInfo} from '@/src/utils/screenInfo';
 
 interface SpeedTestSceneProps {
   onBack: () => void;
@@ -75,6 +81,8 @@ const INITIAL_TELEMETRY: TypingTelemetrySnapshot = {
 
 export const SpeedTestScene: React.FC<SpeedTestSceneProps> = ({onBack}) => {
   const {settings} = useAppearance();
+  const screen = useScreenInfo();
+  const [setupDrawerOpen, setSetupDrawerOpen] = useState(false);
   const [duration, setDuration] = useState<DurationMode>(PRESETS[1]); // 1 min default
   const [customWordCount, setCustomWordCount] = useState<number>(40);
   const [useCustomCount, setUseCustomCount] = useState(false);
@@ -269,153 +277,251 @@ export const SpeedTestScene: React.FC<SpeedTestSceneProps> = ({onBack}) => {
     : `${duration.label} · ${textKind}`;
 
   const isFocus = settings.layout === 'focus';
+  const showInlinePresets =
+    !results &&
+    !screen.showSidePanels &&
+    screen.layoutProfile !== 'compact' &&
+    screen.width >= 1080 &&
+    screen.height >= 720;
+
+  const durationControls = (
+    <div
+      className="flex flex-wrap items-center gap-1 rounded-xl border p-1"
+      style={{backgroundColor: 'var(--tv-surface)', borderColor: 'var(--tv-border)'}}
+    >
+      {PRESETS.map((p) => {
+        const selected =
+          !useCustomCount &&
+          duration.type === p.type &&
+          duration.label === p.label;
+        return (
+          <button
+            key={p.label}
+            type="button"
+            onClick={() => {
+              soundEngine.playUiTap();
+              setUseCustomCount(false);
+              setDuration(p);
+            }}
+            className="rounded-lg px-2.5 py-1 text-xs font-medium whitespace-nowrap transition-colors"
+            style={{
+              backgroundColor: selected ? 'var(--tv-accent)' : 'transparent',
+              color: selected ? 'var(--tv-accent-fg)' : 'var(--tv-text-muted)',
+            }}
+          >
+            {p.label}
+          </button>
+        );
+      })}
+      <button
+        type="button"
+        onClick={() => {
+          soundEngine.playUiTap();
+          setUseCustomCount(true);
+        }}
+        className="rounded-lg px-2.5 py-1 text-xs font-medium whitespace-nowrap transition-colors"
+        style={{
+          backgroundColor: useCustomCount ? 'var(--tv-accent)' : 'transparent',
+          color: useCustomCount ? 'var(--tv-accent-fg)' : 'var(--tv-text-muted)',
+        }}
+      >
+        Custom
+      </button>
+      {useCustomCount && (
+        <input
+          type="number"
+          min={5}
+          max={300}
+          value={customWordCount}
+          onChange={(e) => setCustomWordCount(Number(e.target.value) || 25)}
+          aria-label="Custom word count"
+          className="font-typing w-16 rounded-md border px-2 py-0.5 text-xs"
+          style={{
+            backgroundColor: 'var(--tv-bg)',
+            borderColor: 'var(--tv-border)',
+            color: 'var(--tv-text)',
+          }}
+        />
+      )}
+    </div>
+  );
+
+  const textAndTierControls = (
+    <div className="space-y-3">
+      <div>
+        <div className="text-[11px] font-medium mb-1.5" style={{color: 'var(--tv-text-muted)'}}>
+          Content Type
+        </div>
+        <div
+          className="flex flex-wrap items-center gap-1 rounded-xl border p-1"
+          style={{backgroundColor: 'var(--tv-surface)', borderColor: 'var(--tv-border)'}}
+        >
+          {TEXT_TYPES.map((t) => {
+            const selected = textKind === t.id && weakKeyFilter.length === 0;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => {
+                  soundEngine.playUiTap();
+                  setWeakKeyFilter([]);
+                  setTextKind(t.id);
+                }}
+                className="rounded-lg px-2.5 py-1 text-xs font-medium whitespace-nowrap transition-colors"
+                style={{
+                  backgroundColor: selected ? 'var(--tv-surface-elevated)' : 'transparent',
+                  color: selected ? 'var(--tv-accent)' : 'var(--tv-text-muted)',
+                }}
+              >
+                {t.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div>
+        <label
+          htmlFor="speed-test-tier"
+          className="block text-[11px] font-medium mb-1.5"
+          style={{color: 'var(--tv-text-muted)'}}
+        >
+          Difficulty Tier
+        </label>
+        <select
+          id="speed-test-tier"
+          value={tier}
+          onChange={(e) => setTier(Number(e.target.value) as WordDifficultyTier | 0)}
+          aria-label="Difficulty tier"
+          className="w-full rounded-xl border px-3 py-2 text-xs font-medium"
+          style={{
+            backgroundColor: 'var(--tv-surface)',
+            borderColor: 'var(--tv-border)',
+            color: 'var(--tv-text)',
+          }}
+        >
+          <option value={0}>Mixed Tier</option>
+          <option value={1}>Tier 1</option>
+          <option value={2}>Tier 2</option>
+          <option value={3}>Tier 3</option>
+          <option value={4}>Tier 4</option>
+          <option value={5}>Tier 5</option>
+        </select>
+      </div>
+    </div>
+  );
+
+  const testSetupPanel = (
+    <section className="tv-surface rounded-2xl p-4 space-y-3" aria-label="Test setup">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="font-display text-sm font-bold flex items-center gap-2">
+          <SlidersHorizontal className="w-4 h-4 shrink-0" style={{color: 'var(--tv-accent)'}} aria-hidden="true" />
+          <span>Test Configuration</span>
+        </h3>
+        <span className="text-[11px] font-typing" style={{color: 'var(--tv-text-muted)'}}>
+          {subModeLabel}
+        </span>
+      </div>
+      <div>
+        <div className="text-[11px] font-medium mb-1.5" style={{color: 'var(--tv-text-muted)'}}>
+          Duration / Word Count
+        </div>
+        {durationControls}
+      </div>
+      {textAndTierControls}
+    </section>
+  );
 
   return (
-    <main className="mx-auto max-w-[1260px] px-4 py-6 sm:px-6 space-y-5">
-      {!isFocus && (
-        <div className="no-print flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={onBack}
-              className="inline-flex items-center gap-1.5 text-xs font-medium hover:opacity-80"
-              style={{color: 'var(--tv-accent)'}}
-            >
-              <ArrowLeft className="w-3.5 h-3.5" aria-hidden="true" />
-              <span>Hub (Esc)</span>
-            </button>
-            <h1 className="font-display text-2xl font-bold tracking-tight">Speed Test</h1>
-            {weakKeyFilter.length > 0 && (
-              <span className="text-xs font-typing" style={{color: 'var(--tv-warning)'}}>
-                Weak-key focus: {weakKeyFilter.join(', ')}
-              </span>
-            )}
-          </div>
-
-          {/* Configuration Bar */}
-          {!results && (
-            <div className="flex flex-wrap items-center gap-2">
-              <div
-                className="flex flex-wrap items-center gap-1 rounded-xl border p-1"
-                style={{backgroundColor: 'var(--tv-surface)', borderColor: 'var(--tv-border)'}}
+    <AdaptiveSceneLayout
+      playLocked={!results}
+      drawerOpen={setupDrawerOpen}
+      drawerTitle="Speed Test Setup"
+      onCloseDrawer={() => setSetupDrawerOpen(false)}
+      drawerContent={
+        <>
+          {testSetupPanel}
+          <LiveSessionStatsPanel telemetry={telemetry} progress={progress} modeFilter="speed-test" />
+        </>
+      }
+      topBar={
+        !isFocus ? (
+          <div className="no-print flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <button
+                type="button"
+                onClick={onBack}
+                className="inline-flex items-center gap-1.5 text-xs font-medium hover:opacity-80 shrink-0"
+                style={{color: 'var(--tv-accent)'}}
               >
-                {PRESETS.map((p) => {
-                  const selected =
-                    !useCustomCount &&
-                    duration.type === p.type &&
-                    duration.label === p.label;
-                  return (
-                    <button
-                      key={p.label}
-                      type="button"
-                      onClick={() => {
-                        soundEngine.playUiTap();
-                        setUseCustomCount(false);
-                        setDuration(p);
-                      }}
-                      className="rounded-lg px-2.5 py-1 text-xs font-medium whitespace-nowrap transition-colors"
-                      style={{
-                        backgroundColor: selected ? 'var(--tv-accent)' : 'transparent',
-                        color: selected ? 'var(--tv-accent-fg)' : 'var(--tv-text-muted)',
-                      }}
-                    >
-                      {p.label}
-                    </button>
-                  );
-                })}
-                <button
-                  type="button"
-                  onClick={() => {
-                    soundEngine.playUiTap();
-                    setUseCustomCount(true);
-                  }}
-                  className="rounded-lg px-2.5 py-1 text-xs font-medium whitespace-nowrap transition-colors"
-                  style={{
-                    backgroundColor: useCustomCount ? 'var(--tv-accent)' : 'transparent',
-                    color: useCustomCount ? 'var(--tv-accent-fg)' : 'var(--tv-text-muted)',
-                  }}
-                >
-                  Custom
-                </button>
-                {useCustomCount && (
-                  <input
-                    type="number"
-                    min={5}
-                    max={300}
-                    value={customWordCount}
-                    onChange={(e) => setCustomWordCount(Number(e.target.value) || 25)}
-                    aria-label="Custom word count"
-                    className="font-typing w-16 rounded-md border px-2 py-0.5 text-xs"
+                <ArrowLeft className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>Hub (Esc)</span>
+              </button>
+              <h1
+                className="font-display font-bold tracking-tight truncate"
+                style={{fontSize: 'var(--tv-text-xl)'}}
+              >
+                Speed Test
+              </h1>
+              {weakKeyFilter.length > 0 && (
+                <span className="text-xs font-typing truncate" style={{color: 'var(--tv-warning)'}}>
+                  Weak-key focus: {weakKeyFilter.join(', ')}
+                </span>
+              )}
+            </div>
+
+            {!results && (
+              <div className="flex flex-wrap items-center gap-2">
+                {showInlinePresets && durationControls}
+                {!screen.showSidePanels && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundEngine.playUiTap();
+                      setSetupDrawerOpen(true);
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-medium"
                     style={{
-                      backgroundColor: 'var(--tv-bg)',
+                      backgroundColor: 'var(--tv-surface)',
                       borderColor: 'var(--tv-border)',
                       color: 'var(--tv-text)',
                     }}
-                  />
+                  >
+                    <SlidersHorizontal className="w-3.5 h-3.5" style={{color: 'var(--tv-accent)'}} aria-hidden="true" />
+                    <span>{showInlinePresets ? 'Text & Tier' : `Setup (${subModeLabel})`}</span>
+                  </button>
                 )}
               </div>
-
-              <div
-                className="flex flex-wrap items-center gap-1 rounded-xl border p-1"
-                style={{backgroundColor: 'var(--tv-surface)', borderColor: 'var(--tv-border)'}}
-              >
-                {TEXT_TYPES.map((t) => {
-                  const selected = textKind === t.id && weakKeyFilter.length === 0;
-                  return (
-                    <button
-                      key={t.id}
-                      type="button"
-                      onClick={() => {
-                        soundEngine.playUiTap();
-                        setWeakKeyFilter([]);
-                        setTextKind(t.id);
-                      }}
-                      className="rounded-lg px-2.5 py-1 text-xs font-medium whitespace-nowrap transition-colors"
-                      style={{
-                        backgroundColor: selected ? 'var(--tv-surface-elevated)' : 'transparent',
-                        color: selected ? 'var(--tv-accent)' : 'var(--tv-text-muted)',
-                      }}
-                    >
-                      {t.label}
-                    </button>
-                  );
-                })}
-              </div>
-
-              <select
-                value={tier}
-                onChange={(e) => setTier(Number(e.target.value) as WordDifficultyTier | 0)}
-                aria-label="Difficulty tier"
-                className="rounded-xl border px-2.5 py-1.5 text-xs font-medium"
-                style={{
-                  backgroundColor: 'var(--tv-surface)',
-                  borderColor: 'var(--tv-border)',
-                  color: 'var(--tv-text)',
-                }}
-              >
-                <option value={0}>Mixed Tier</option>
-                <option value={1}>Tier 1</option>
-                <option value={2}>Tier 2</option>
-                <option value={3}>Tier 3</option>
-                <option value={4}>Tier 4</option>
-                <option value={5}>Tier 5</option>
-              </select>
-            </div>
-          )}
+            )}
+          </div>
+        ) : undefined
+      }
+      leftPanel={
+        !isFocus ? (
+          <>
+            {!results && testSetupPanel}
+            <LiveSessionStatsPanel telemetry={telemetry} progress={progress} modeFilter="speed-test" />
+          </>
+        ) : undefined
+      }
+      rightPanel={
+        !isFocus ? (
+          <CompactKeyHeatmapPanel keyMetrics={progress?.keyMetrics ?? {}} />
+        ) : undefined
+      }
+      hud={
+        <div className="no-print">
+          <WpmHud
+            telemetry={telemetry}
+            personalBestWpm={progress?.bestWpm ?? 0}
+            targetWpm={progress?.targetWpm ?? 60}
+            dailyGoalMinutes={progress?.dailyGoalMinutes ?? 15}
+            todayActivitySeconds={getTodayActivitySeconds(progress)}
+            showGhostPace
+          />
         </div>
-      )}
-
-      {/* Live WPM Meter HUD (always visible) */}
-      <div className="no-print">
-        <WpmHud
-          telemetry={telemetry}
-          personalBestWpm={progress?.bestWpm ?? 0}
-          targetWpm={progress?.targetWpm ?? 60}
-          showGhostPace
-        />
-      </div>
-
-      {/* Active Typing Arena OR Results Screen */}
+      }
+    >
       {results ? (
         <SessionResults
           stats={results}
@@ -443,6 +549,6 @@ export const SpeedTestScene: React.FC<SpeedTestSceneProps> = ({onBack}) => {
           Preparing passage...
         </div>
       )}
-    </main>
+    </AdaptiveSceneLayout>
   );
 };

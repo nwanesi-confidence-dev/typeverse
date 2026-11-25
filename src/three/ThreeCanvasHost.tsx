@@ -3,6 +3,7 @@ import {useAppearance} from '@/src/context/AppearanceContext';
 import {buildRenderSpecForMode, type RenderSpec3D} from '@/src/graphics/decision';
 import {graphicsModeService, useGraphicsMode} from '@/src/graphics/graphicsModeService';
 import {subscribeTexturePrepStatus, type TexturePrepStatus} from '@/src/graphics/texturePrepBus';
+import {useScreenInfo} from '@/src/utils/screenInfo';
 import type {GraphicsGameId, ResolvedGraphicsMode} from '@/src/types/app';
 
 export interface SceneCompatPreset extends RenderSpec3D {
@@ -84,6 +85,7 @@ export const ThreeCanvasHost: React.FC<ThreeCanvasHostProps> = ({
   onLostCallbackRef.current = onContextLostPermanent;
   const {settings} = useAppearance();
   const gfx = useGraphicsMode(gameId);
+  const screen = useScreenInfo();
 
   const [prepStatus, setPrepStatus] = useState<TexturePrepStatus>({
     preparing: false,
@@ -213,7 +215,11 @@ export const ThreeCanvasHost: React.FC<ThreeCanvasHostProps> = ({
           resizeObs = new ResizeObserver((entries) => {
             const entry = entries[0];
             if (!entry) return;
-            handle.resize(entry.contentRect.width, entry.contentRect.height);
+            const rw = entry.contentRect.width;
+            const rh = entry.contentRect.height;
+            if (rw > 0 && rh > 0) {
+              handle.resize(rw, rh);
+            }
           });
           resizeObs.observe(container);
         }
@@ -252,6 +258,14 @@ export const ThreeCanvasHost: React.FC<ThreeCanvasHostProps> = ({
   }, [isOff, sceneKey, resolvedMode, calmMode, loadScene, activeSpec, gfx.hardwareReport, gameId, retryNonce]);
 
   useEffect(() => {
+    const el = hostRef.current;
+    if (isOff || !el || !handleRef.current) return;
+    if (el.clientWidth > 0 && el.clientHeight > 0) {
+      handleRef.current.resize(el.clientWidth, el.clientHeight);
+    }
+  }, [isOff, screen.devicePixelRatio, screen.width, screen.height]);
+
+  useEffect(() => {
     handleRef.current?.updateState?.(sceneState);
   }, [sceneState]);
 
@@ -267,14 +281,38 @@ export const ThreeCanvasHost: React.FC<ThreeCanvasHostProps> = ({
     <div ref={hostRef} className={className} aria-hidden="true">
       {prepStatus.preparing && resolvedMode === '3d-realistic' && (
         <div
-          className="absolute bottom-3 left-3 z-10 rounded-lg border px-2.5 py-1 text-[11px] font-medium shadow-md"
+          className="absolute bottom-3 left-3 z-10 inline-flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-[11px] font-medium shadow-md"
           style={{
             backgroundColor: 'var(--tv-surface-elevated)',
             borderColor: 'var(--tv-border)',
             color: 'var(--tv-text)',
           }}
         >
-          {prepStatus.label} ({prepStatus.progressPct}%)
+          <svg className="w-4 h-4 -rotate-90 shrink-0" viewBox="0 0 20 20" aria-hidden="true">
+            <circle
+              cx="10"
+              cy="10"
+              r="7.5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              opacity="0.2"
+            />
+            <circle
+              cx="10"
+              cy="10"
+              r="7.5"
+              fill="none"
+              stroke="var(--tv-accent)"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeDasharray={47.12}
+              strokeDashoffset={47.12 * (1 - Math.max(0, Math.min(100, prepStatus.progressPct)) / 100)}
+            />
+          </svg>
+          <span>
+            {prepStatus.label} ({prepStatus.progressPct}%)
+          </span>
         </div>
       )}
     </div>

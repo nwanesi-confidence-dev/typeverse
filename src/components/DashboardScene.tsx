@@ -36,6 +36,7 @@ import {
   flushDesktopBackupNow,
 } from '@/src/utils/desktopBackup';
 import {BADGE_DEFINITIONS, getLocalDateKey, getXpRank} from '@/src/utils/progression';
+import {useScreenInfo} from '@/src/utils/screenInfo';
 
 interface DashboardSceneProps {
   onBack: () => void;
@@ -55,6 +56,7 @@ export const DashboardScene: React.FC<DashboardSceneProps> = ({
   onBack,
   activeProfileId,
 }) => {
+  const screen = useScreenInfo();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [progress, setProgress] = useState<ProfileProgress | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
@@ -307,12 +309,18 @@ export const DashboardScene: React.FC<DashboardSceneProps> = ({
   const ringR = 34;
   const ringCirc = 2 * Math.PI * ringR;
   const ringDash = (dailyGoalPct / 100) * ringCirc;
+  const splitHero = screen.width >= 980;
+  const statCols = screen.width < 600 ? 2 : 4;
+  const splitTrends = screen.width >= 880;
+  const splitCalendar = screen.width >= 940;
+  const badgeCols =
+    screen.width < 560 ? 1 : screen.width < 900 ? 2 : screen.width < 1360 ? 3 : 5;
 
   return (
-    <main className="mx-auto max-w-[1360px] px-4 py-6 sm:px-6 space-y-6">
+    <main className="tv-fluid-container py-5 space-y-5">
       {/* Header Row */}
       <div className="no-print flex flex-wrap items-center justify-between gap-4">
-        <div className="space-y-1">
+        <div className="space-y-1 min-w-0">
           <button
             type="button"
             onClick={onBack}
@@ -322,7 +330,7 @@ export const DashboardScene: React.FC<DashboardSceneProps> = ({
             <ArrowLeft className="w-3.5 h-3.5" aria-hidden="true" />
             <span>Back to Hub (Esc)</span>
           </button>
-          <h1 className="font-display text-3xl font-bold tracking-tight">
+          <h1 className="font-display font-bold tracking-tight" style={{fontSize: 'var(--tv-text-2xl)'}}>
             {profile?.name ?? 'Typist'} · Progress & Mastery
           </h1>
           <p className="text-sm" style={{color: 'var(--tv-text-muted)'}}>
@@ -396,18 +404,26 @@ export const DashboardScene: React.FC<DashboardSceneProps> = ({
       )}
 
       {/* Lifetime Stats + XP Ladder + Daily Goal Ring */}
-      <section className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-        <div className="lg:col-span-8 grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div className="tv-surface tv-dash-card rounded-xl p-4">
-            <div className="text-xs" style={{color: 'var(--tv-text-muted)'}}>Best Net Speed</div>
+      <section
+        className="grid gap-5"
+        style={{
+          gridTemplateColumns: splitHero ? 'minmax(0, 2fr) minmax(0, 1fr)' : 'minmax(0, 1fr)',
+        }}
+      >
+        <div
+          className="grid gap-3 min-w-0"
+          style={{gridTemplateColumns: `repeat(${statCols}, minmax(0, 1fr))`}}
+        >
+          <div className="tv-surface tv-dash-card rounded-xl p-4 min-w-0">
+            <div className="text-xs truncate" style={{color: 'var(--tv-text-muted)'}}>Best Net Speed</div>
             <div className="font-typing text-3xl font-bold tabular-nums mt-1" style={{color: 'var(--tv-accent)'}}>
               {progress?.bestWpm ?? 0}
             </div>
             <div className="text-[11px] mt-1" style={{color: 'var(--tv-text-muted)'}}>WPM record</div>
           </div>
 
-          <div className="tv-surface tv-dash-card rounded-xl p-4">
-            <div className="text-xs" style={{color: 'var(--tv-text-muted)'}}>Avg Accuracy</div>
+          <div className="tv-surface tv-dash-card rounded-xl p-4 min-w-0">
+            <div className="text-xs truncate" style={{color: 'var(--tv-text-muted)'}}>Avg Accuracy</div>
             <div className="font-typing text-3xl font-bold tabular-nums mt-1" style={{color: 'var(--tv-success)'}}>
               {avgAccuracy}%
             </div>
@@ -416,8 +432,8 @@ export const DashboardScene: React.FC<DashboardSceneProps> = ({
             </div>
           </div>
 
-          <div className="tv-surface tv-dash-card rounded-xl p-4">
-            <div className="text-xs" style={{color: 'var(--tv-text-muted)'}}>Words Typed</div>
+          <div className="tv-surface tv-dash-card rounded-xl p-4 min-w-0">
+            <div className="text-xs truncate" style={{color: 'var(--tv-text-muted)'}}>Words Typed</div>
             <div className="font-typing text-3xl font-bold tabular-nums mt-1">
               {(progress?.totalWordsTyped ?? 0).toLocaleString()}
             </div>
@@ -426,20 +442,23 @@ export const DashboardScene: React.FC<DashboardSceneProps> = ({
             </div>
           </div>
 
-          <div className="tv-surface tv-dash-card rounded-xl p-4">
-            <div className="text-xs" style={{color: 'var(--tv-text-muted)'}}>Current Streak</div>
+          <div className="tv-surface tv-dash-card rounded-xl p-4 min-w-0">
+            <div className="text-xs truncate" style={{color: 'var(--tv-text-muted)'}}>Current Streak</div>
             <div className="font-typing text-3xl font-bold tabular-nums mt-1 flex items-center gap-1.5">
-              <Flame className="w-6 h-6" style={{color: 'var(--tv-warning)'}} aria-hidden="true" />
+              <Flame className="w-6 h-6 shrink-0" style={{color: 'var(--tv-warning)'}} aria-hidden="true" />
               <span>{progress?.streakDays ?? 0}d</span>
             </div>
-            <div className="text-[11px] mt-1" style={{color: 'var(--tv-text-muted)'}}>
+            <div className="text-[11px] mt-1 truncate" style={{color: 'var(--tv-text-muted)'}}>
               XP Level: {rank.current.name}
             </div>
           </div>
 
           {/* XP Ladder Bar */}
-          <div className="col-span-2 sm:col-span-4 tv-surface tv-dash-card rounded-xl p-4 space-y-2">
-            <div className="flex items-center justify-between text-xs">
+          <div
+            className="tv-surface tv-dash-card rounded-xl p-4 space-y-2 min-w-0"
+            style={{gridColumn: '1 / -1'}}
+          >
+            <div className="flex items-center justify-between text-xs gap-2">
               <span className="font-semibold">XP Ladder · {rank.current.name}</span>
               <span className="font-typing tabular-nums" style={{color: 'var(--tv-text-muted)'}}>
                 {rank.progressPct}% to next rank
@@ -451,7 +470,7 @@ export const DashboardScene: React.FC<DashboardSceneProps> = ({
                 style={{width: `${rank.progressPct}%`, backgroundColor: 'var(--tv-accent)'}}
               />
             </div>
-            <div className="flex justify-between text-[11px]" style={{color: 'var(--tv-text-muted)'}}>
+            <div className="flex justify-between gap-2 text-[11px]" style={{color: 'var(--tv-text-muted)'}}>
               <span>Novice</span>
               <span>Learner</span>
               <span>Typist</span>
@@ -463,7 +482,7 @@ export const DashboardScene: React.FC<DashboardSceneProps> = ({
         </div>
 
         {/* Goals & Daily Progress Ring */}
-        <div className="lg:col-span-4 tv-surface tv-dash-card rounded-2xl p-5 flex flex-col justify-between gap-4">
+        <div className="tv-surface tv-dash-card rounded-2xl p-5 flex flex-col justify-between gap-4 min-w-0">
           <div className="flex items-center gap-4">
             <svg width="84" height="84" viewBox="0 0 84 84" className="shrink-0" aria-label="Daily goal progress ring">
               <circle cx="42" cy="42" r={ringR} fill="none" stroke="var(--tv-border)" strokeWidth="7" />
@@ -490,7 +509,7 @@ export const DashboardScene: React.FC<DashboardSceneProps> = ({
                 {dailyGoalPct}%
               </text>
             </svg>
-            <div>
+            <div className="min-w-0">
               <h2 className="font-display text-base font-bold">Daily Practice Goal</h2>
               <p className="text-xs font-typing tabular-nums mt-0.5" style={{color: 'var(--tv-text-muted)'}}>
                 {todayMinutes} / {progress?.dailyGoalMinutes ?? 15} mins today
@@ -543,8 +562,11 @@ export const DashboardScene: React.FC<DashboardSceneProps> = ({
       </section>
 
       {/* WPM & Accuracy Trend SVG Charts */}
-      <section className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <div className="tv-surface rounded-2xl p-5 space-y-2">
+      <section
+        className="grid gap-5"
+        style={{gridTemplateColumns: splitTrends ? 'repeat(2, minmax(0, 1fr))' : 'minmax(0, 1fr)'}}
+      >
+        <div className="tv-surface rounded-2xl p-5 space-y-2 min-w-0">
           <div className="flex items-center justify-between text-xs">
             <span className="font-display text-sm font-bold">Net WPM Trend</span>
             <span style={{color: 'var(--tv-text-muted)'}}>Last {trendSessions.length} sessions</span>
@@ -569,7 +591,7 @@ export const DashboardScene: React.FC<DashboardSceneProps> = ({
           )}
         </div>
 
-        <div className="tv-surface rounded-2xl p-5 space-y-2">
+        <div className="tv-surface rounded-2xl p-5 space-y-2 min-w-0">
           <div className="flex items-center justify-between text-xs">
             <span className="font-display text-sm font-bold">Accuracy Trend</span>
             <span style={{color: 'var(--tv-text-muted)'}}>70% – 100% scale</span>
@@ -596,13 +618,20 @@ export const DashboardScene: React.FC<DashboardSceneProps> = ({
       </section>
 
       {/* Streak Calendar + Best Score Per Mode */}
-      <section className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-        <div className="lg:col-span-7 tv-surface rounded-2xl p-5 space-y-3">
+      <section
+        className="grid gap-5"
+        style={{
+          gridTemplateColumns: splitCalendar
+            ? 'minmax(0, 7fr) minmax(0, 5fr)'
+            : 'minmax(0, 1fr)',
+        }}
+      >
+        <div className="tv-surface rounded-2xl p-5 space-y-3 min-w-0">
           <div className="flex items-center justify-between">
             <h2 className="font-display text-base font-bold">12-Week Practice Calendar</h2>
             <span className="text-xs" style={{color: 'var(--tv-text-muted)'}}>84-day history</span>
           </div>
-          <div className="grid grid-cols-12 sm:grid-cols-14 gap-1.5" style={{gridTemplateColumns: 'repeat(14, minmax(0, 1fr))'}}>
+          <div className="grid gap-1.5" style={{gridTemplateColumns: 'repeat(14, minmax(0, 1fr))'}}>
             {calendarDays.map((day) => {
               const mins = day.seconds / 60;
               const opacity =
@@ -623,7 +652,7 @@ export const DashboardScene: React.FC<DashboardSceneProps> = ({
           </div>
         </div>
 
-        <div className="lg:col-span-5 tv-surface rounded-2xl p-5 space-y-3">
+        <div className="tv-surface rounded-2xl p-5 space-y-3 min-w-0">
           <h2 className="font-display text-base font-bold">Best Score by Mode</h2>
           <div className="space-y-2">
             {bestPerMode.map((m) => (
@@ -632,8 +661,8 @@ export const DashboardScene: React.FC<DashboardSceneProps> = ({
                 className="flex items-center justify-between text-xs py-1.5 border-b last:border-b-0"
                 style={{borderColor: 'var(--tv-border)'}}
               >
-                <span className="font-medium">{m.label}</span>
-                <span className="font-typing tabular-nums" style={{color: 'var(--tv-text-muted)'}}>
+                <span className="font-medium truncate">{m.label}</span>
+                <span className="font-typing tabular-nums shrink-0" style={{color: 'var(--tv-text-muted)'}}>
                   <strong style={{color: m.bestWpm > 0 ? 'var(--tv-accent)' : 'var(--tv-text-muted)'}}>
                     {m.bestWpm} WPM
                   </strong>{' '}
@@ -657,21 +686,24 @@ export const DashboardScene: React.FC<DashboardSceneProps> = ({
           </span>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+        <div
+          className="grid gap-3"
+          style={{gridTemplateColumns: `repeat(${badgeCols}, minmax(0, 1fr))`}}
+        >
           {BADGE_DEFINITIONS.map((b) => {
             const unlocked = progress?.badges.includes(b.id) ?? false;
             return (
               <div
                 key={b.id}
-                className="rounded-xl border p-3.5 space-y-1.5"
+                className="rounded-xl border p-3.5 space-y-1.5 min-w-0"
                 style={{
                   backgroundColor: 'var(--tv-bg)',
                   borderColor: unlocked ? 'var(--tv-accent)' : 'var(--tv-border)',
                   opacity: unlocked ? 1 : 0.6,
                 }}
               >
-                <div className="flex items-center justify-between">
-                  <span className="font-display text-sm font-bold">{b.title}</span>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-display text-sm font-bold truncate">{b.title}</span>
                   {unlocked && (
                     <CheckCircle2 className="w-4 h-4 shrink-0" style={{color: 'var(--tv-success)'}} aria-hidden="true" />
                   )}

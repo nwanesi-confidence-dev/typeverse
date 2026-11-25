@@ -617,6 +617,10 @@ export function mountScene(ctx: LazyThreeMountContext): LazyThreeSceneHandle {
   };
 
   updateTransforms(0);
+  if (isRealistic && ctx.preset.shadows && ctx.calmMode) {
+    renderer.shadowMap.autoUpdate = false;
+    renderer.shadowMap.needsUpdate = true;
+  }
   renderFrame(0.016);
 
   const loop = createCappedLoop({

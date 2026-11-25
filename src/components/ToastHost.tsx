@@ -54,10 +54,10 @@ export const ToastHost: React.FC<ToastHostProps> = ({
   }
 
   return (
-    <div className="no-print fixed bottom-5 right-5 z-50 flex flex-col items-end gap-2.5">
+    <div className="no-print fixed bottom-4 left-4 right-4 z-50 flex flex-col items-end gap-2.5 pointer-events-none">
       {gfx.slowRealisticPromptVisible && (
         <div
-          className="rounded-xl border px-4 py-3 shadow-2xl max-w-sm space-y-2.5"
+          className="pointer-events-auto rounded-xl border px-4 py-3 shadow-2xl w-fit max-w-[min(100%,24rem)] space-y-2.5"
           style={{
             backgroundColor: 'var(--tv-surface-elevated)',
             borderColor: 'var(--tv-warning)',
@@ -118,7 +118,7 @@ export const ToastHost: React.FC<ToastHostProps> = ({
       )}
       {gfx.slow3DPromptVisible && (
         <div
-          className="rounded-xl border px-4 py-3 shadow-2xl max-w-sm space-y-2.5"
+          className="pointer-events-auto rounded-xl border px-4 py-3 shadow-2xl w-fit max-w-[min(100%,24rem)] space-y-2.5"
           style={{
             backgroundColor: 'var(--tv-surface-elevated)',
             borderColor: 'var(--tv-warning)',
@@ -180,7 +180,7 @@ export const ToastHost: React.FC<ToastHostProps> = ({
       {systemQueue.map((item) => (
         <div
           key={item.id}
-          className="flex items-center gap-3 rounded-xl border px-4 py-3 shadow-2xl max-w-sm"
+          className="pointer-events-auto flex items-center gap-3 rounded-xl border px-4 py-3 shadow-2xl w-fit max-w-[min(100%,24rem)]"
           style={{
             backgroundColor: 'var(--tv-surface-elevated)',
             borderColor: item.tone === 'warning' ? 'var(--tv-warning)' : 'var(--tv-accent)',
@@ -222,7 +222,7 @@ export const ToastHost: React.FC<ToastHostProps> = ({
       {badgeQueue.map((badge) => (
         <div
           key={badge.id}
-          className="flex items-center gap-3 rounded-xl border px-4 py-3 shadow-2xl max-w-sm"
+          className="pointer-events-auto flex items-center gap-3 rounded-xl border px-4 py-3 shadow-2xl w-fit max-w-[min(100%,24rem)]"
           style={{
             backgroundColor: 'var(--tv-surface-elevated)',
             borderColor: 'var(--tv-warning)',
@@ -257,7 +257,7 @@ export const ToastHost: React.FC<ToastHostProps> = ({
 
       {desktopUpdate && (
         <div
-          className="flex items-center gap-3 rounded-xl border px-4 py-3 shadow-2xl"
+          className="pointer-events-auto flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3 shadow-2xl w-fit max-w-full"
           style={{
             backgroundColor: 'var(--tv-surface-elevated)',
             borderColor: 'var(--tv-accent)',
@@ -269,7 +269,7 @@ export const ToastHost: React.FC<ToastHostProps> = ({
           {desktopUpdate.status === 'downloaded' ? (
             <>
               <RefreshCw className="w-4 h-4 shrink-0" style={{color: 'var(--tv-accent)'}} aria-hidden="true" />
-              <span className="text-sm font-medium whitespace-nowrap">
+              <span className="text-sm font-medium min-w-0">
                 Update ready{desktopUpdate.version ? ` (v${desktopUpdate.version})` : ''} — restart
               </span>
               <button
@@ -287,7 +287,7 @@ export const ToastHost: React.FC<ToastHostProps> = ({
           ) : (
             <>
               <Download className="w-4 h-4 shrink-0" style={{color: 'var(--tv-accent)'}} aria-hidden="true" />
-              <span className="text-sm font-medium whitespace-nowrap">
+              <span className="text-sm font-medium min-w-0">
                 New version available{desktopUpdate.version ? ` (v${desktopUpdate.version})` : ''} — download
               </span>
               <button
@@ -323,7 +323,7 @@ export const ToastHost: React.FC<ToastHostProps> = ({
 
       {needRefresh && (
         <div
-          className="flex items-center gap-3 rounded-xl border px-4 py-3 shadow-2xl"
+          className="pointer-events-auto flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3 shadow-2xl w-fit max-w-full"
           style={{
             backgroundColor: 'var(--tv-surface-elevated)',
             borderColor: 'var(--tv-accent)',
@@ -333,7 +333,7 @@ export const ToastHost: React.FC<ToastHostProps> = ({
           aria-live="polite"
         >
           <RefreshCw className="w-4 h-4 shrink-0" style={{color: 'var(--tv-accent)'}} aria-hidden="true" />
-          <span className="text-sm font-medium whitespace-nowrap">Update available — reload</span>
+          <span className="text-sm font-medium min-w-0">Update available — reload</span>
           <button
             type="button"
             onClick={onReload}

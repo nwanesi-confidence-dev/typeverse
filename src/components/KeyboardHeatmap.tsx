@@ -3,6 +3,7 @@ import {useGraphicsMode} from '@/src/graphics/graphicsModeService';
 import {ThreeCanvasHost} from '@/src/three/ThreeCanvasHost';
 import type {Heatmap3DState} from '@/src/three/scenes/heatmap3DScene';
 import type {KeyAggregateMetric} from '@/src/types/app';
+import {useScreenInfo} from '@/src/utils/screenInfo';
 
 const loadHeatmap3DScene = () => import('@/src/three/scenes/heatmap3DScene');
 
@@ -25,6 +26,8 @@ export const KeyboardHeatmap: React.FC<KeyboardHeatmapProps> = ({
   onToggleKey,
 }) => {
   const gfx = useGraphicsMode();
+  const screen = useScreenInfo();
+  const compactMap = screen.width < 780 || screen.showSidePanels;
   const canUse3D =
     gfx.effectiveMode !== '2d' &&
     gfx.hardwareReport.webglSupported &&
@@ -223,7 +226,7 @@ export const KeyboardHeatmap: React.FC<KeyboardHeatmapProps> = ({
       {/* 3D Height Map OR 2D Heatmap Key Grid */}
       {show3D ? (
         <div
-          className="relative h-[280px] sm:h-[310px] w-full rounded-xl border overflow-hidden"
+          className={`relative ${compactMap ? 'h-[215px]' : 'h-[285px]'} w-full rounded-xl border overflow-hidden`}
           style={{backgroundColor: 'var(--tv-bg)', borderColor: 'var(--tv-border)'}}
         >
           <ThreeCanvasHost
@@ -244,12 +247,12 @@ export const KeyboardHeatmap: React.FC<KeyboardHeatmapProps> = ({
           </div>
         </div>
       ) : (
-        <div className="mx-auto max-w-[740px] space-y-1.5">
+        <div className={`mx-auto w-full max-w-[760px] ${compactMap ? 'space-y-1' : 'space-y-1.5'}`}>
           {HEATMAP_ROWS.map((row, rIdx) => (
             <div
               key={rIdx}
-              className="flex justify-center gap-1.5"
-              style={{paddingLeft: `${rIdx * 10}px`}}
+              className={`flex justify-center ${compactMap ? 'gap-1' : 'gap-1.5'}`}
+              style={{paddingLeft: `${rIdx * (compactMap ? 6 : 10)}px`}}
             >
               {row.map((k) => {
                 const tone = getKeyTone(k);
@@ -261,7 +264,9 @@ export const KeyboardHeatmap: React.FC<KeyboardHeatmapProps> = ({
                     onMouseEnter={() => setHoveredKey(k)}
                     onFocus={() => setHoveredKey(k)}
                     onClick={() => onToggleKey?.(k)}
-                    className="flex flex-col items-center justify-center rounded-lg border h-12 flex-1 max-w-[54px] transition-transform hover:-translate-y-0.5"
+                    className={`flex flex-col items-center justify-center rounded-lg border flex-1 min-w-0 max-w-[54px] transition-transform hover:-translate-y-0.5 ${
+                      compactMap ? 'h-10' : 'h-12'
+                    }`}
                     style={{
                       backgroundColor: tone.bg,
                       borderColor: isSelected ? 'var(--tv-text)' : tone.border,

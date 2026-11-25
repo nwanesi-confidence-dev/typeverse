@@ -135,7 +135,7 @@ export const ProfileManagerModal: React.FC<ProfileManagerModalProps> = ({
       onClick={onClose}
     >
       <div
-        className="tv-surface w-full max-w-lg rounded-2xl p-6 shadow-2xl space-y-5"
+        className="tv-surface w-[min(100%,32rem)] max-h-[92%] overflow-y-auto rounded-2xl p-5 sm:p-6 shadow-2xl space-y-5"
         onClick={(e) => e.stopPropagation()}
       >
         <div

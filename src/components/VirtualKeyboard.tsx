@@ -1,4 +1,6 @@
 import React, {useEffect, useMemo, useRef} from 'react';
+import {computeKeyboardLayout} from '@/src/utils/responsiveLayout';
+import {useScreenInfo} from '@/src/utils/screenInfo';
 
 export type FingerId =
   | 'l-pinky'
@@ -177,6 +179,8 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
   nextChar,
   showFingerGuide = true,
 }) => {
+  const screen = useScreenInfo();
+  const kbLayout = useMemo(() => computeKeyboardLayout(screen), [screen]);
   const keyElsRef = useRef<Map<string, HTMLDivElement>>(new Map());
   const releaseTimersRef = useRef<Map<string, number>>(new Map());
   const target = useMemo(() => resolveTargetKeys(nextChar), [nextChar]);
@@ -255,113 +259,147 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
     return set;
   }, [target]);
 
+  const showGuide = showFingerGuide && kbLayout.allowFingerGuide;
+
   return (
     <section
-      className="tv-surface tv-keyboard-tray rounded-2xl p-4 sm:p-5 space-y-4 select-none"
+      className="tv-surface tv-keyboard-tray rounded-2xl select-none w-full min-w-0"
+      style={{
+        padding: `${kbLayout.trayPaddingPx}px`,
+      }}
       aria-label="On-screen keyboard and finger guide"
     >
-      {/* Top prompt line */}
-      <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
-        <div className="flex items-center gap-2">
-          <span style={{color: 'var(--tv-text-muted)'}}>Next key:</span>
-          {target.keyCode ? (
-            <span className="font-typing font-bold" style={{color: 'var(--tv-accent)'}}>
-              {target.shiftSide ? `${target.shiftSide === 'ShiftLeft' ? 'Left Shift' : 'Right Shift'} + ` : ''}
-              {nextChar === ' ' ? 'Space' : nextChar}
-            </span>
-          ) : (
-            <span style={{color: 'var(--tv-text-muted)'}}>Ready</span>
+      <div style={{display: 'flex', flexDirection: 'column', gap: `${kbLayout.rowGapPx + 4}px`}}>
+        {/* Top prompt line */}
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div className="flex items-center gap-2">
+            <span style={{color: 'var(--tv-text-muted)'}}>Next key:</span>
+            {target.keyCode ? (
+              <span className="font-typing font-bold" style={{color: 'var(--tv-accent)'}}>
+                {target.shiftSide ? `${target.shiftSide === 'ShiftLeft' ? 'Left Shift' : 'Right Shift'} + ` : ''}
+                {nextChar === ' ' ? 'Space' : nextChar}
+              </span>
+            ) : (
+              <span style={{color: 'var(--tv-text-muted)'}}>Ready</span>
+            )}
+          </div>
+
+          {target.finger && (
+            <div className="flex items-center gap-2">
+              <span
+                className="inline-block w-2.5 h-2.5 rounded-full"
+                style={{backgroundColor: FINGER_COLOR[target.finger]}}
+                aria-hidden="true"
+              />
+              <span className="font-medium">
+                {FINGER_LABEL[target.finger]}
+                {target.shiftSide && ` + ${target.shiftSide === 'ShiftLeft' ? 'Left Pinky (Shift)' : 'Right Pinky (Shift)'}`}
+              </span>
+            </div>
           )}
         </div>
 
-        {target.finger && (
-          <div className="flex items-center gap-2">
-            <span
-              className="inline-block w-2.5 h-2.5 rounded-full"
-              style={{backgroundColor: FINGER_COLOR[target.finger]}}
-              aria-hidden="true"
+        {/* QWERTY Rows */}
+        <div
+          className="tv-keyboard-board mx-auto w-full"
+          style={{
+            maxWidth: `${kbLayout.maxBoardWidthPx}px`,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: `${kbLayout.rowGapPx}px`,
+          }}
+        >
+          {KEYBOARD_ROWS.map((row, rIdx) => (
+            <div
+              key={rIdx}
+              className="flex justify-center"
+              style={{gap: `${kbLayout.keyGapPx}px`}}
+            >
+              {row.map((k) => {
+                const isTarget =
+                  target.keyCode === k.code || target.shiftSide === k.code;
+                const zoneColor = FINGER_COLOR[k.finger];
+                return (
+                  <div
+                    key={k.code}
+                    ref={(el) => {
+                      if (el) keyElsRef.current.set(k.code, el);
+                      else keyElsRef.current.delete(k.code);
+                    }}
+                    data-target={isTarget ? 'true' : undefined}
+                    className={`tv-keycap-3d relative flex flex-col items-center justify-center rounded-lg border font-typing font-semibold transition-colors min-w-0 ${
+                      k.widthClass ?? 'flex-1 max-w-[68px]'
+                    }`}
+                    style={
+                      {
+                        height: `${kbLayout.keyHeightPx}px`,
+                        fontSize: `${kbLayout.keyFontPx}px`,
+                        backgroundColor: isTarget ? zoneColor : 'var(--tv-bg)',
+                        color: isTarget ? '#04131B' : 'var(--tv-text)',
+                        borderColor: isTarget ? zoneColor : `${zoneColor}55`,
+                        boxShadow: isTarget ? `0 0 14px ${zoneColor}66` : undefined,
+                        '--tv-key-glow': `${zoneColor}77`,
+                      } as React.CSSProperties
+                    }
+                  >
+                    {k.shiftLabel && kbLayout.keyHeightPx >= 31 && (
+                      <span
+                        className="leading-none opacity-65 mb-0.5"
+                        style={{fontSize: `${kbLayout.shiftFontPx}px`}}
+                      >
+                        {k.shiftLabel}
+                      </span>
+                    )}
+                    <span className="leading-none truncate px-0.5">{k.label}</span>
+                    {k.isHomeAnchor && (
+                      <span
+                        className="absolute bottom-1 w-2.5 h-0.5 rounded-full"
+                        style={{
+                          backgroundColor: isTarget ? '#04131B' : zoneColor,
+                        }}
+                        aria-hidden="true"
+                      />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+
+        {/* SVG Two-Hand Finger Guide (automatically hidden when height is compact/short) */}
+        {showGuide && (
+          <div
+            className="pt-1.5 border-t flex flex-wrap items-center justify-center gap-4"
+            style={{borderColor: 'var(--tv-border)'}}
+          >
+            <HandGuideSvg
+              side="left"
+              activeFingers={activeFingers}
+              width={kbLayout.handGuideWidthPx}
+              height={kbLayout.handGuideHeightPx}
             />
-            <span className="font-medium">
-              {FINGER_LABEL[target.finger]}
-              {target.shiftSide && ` + ${target.shiftSide === 'ShiftLeft' ? 'Left Pinky (Shift)' : 'Right Pinky (Shift)'}`}
-            </span>
+            <div className="text-center space-y-1 min-w-[130px]">
+              <div className="text-[11px] uppercase tracking-wider font-semibold" style={{color: 'var(--tv-text-muted)'}}>
+                Finger Zones
+              </div>
+              <div className="flex flex-wrap justify-center gap-x-3 gap-y-1 text-[11px]" style={{color: 'var(--tv-text-muted)'}}>
+                <span>Pinky</span>
+                <span>Ring</span>
+                <span>Middle</span>
+                <span>Index</span>
+                <span>Thumb</span>
+              </div>
+            </div>
+            <HandGuideSvg
+              side="right"
+              activeFingers={activeFingers}
+              width={kbLayout.handGuideWidthPx}
+              height={kbLayout.handGuideHeightPx}
+            />
           </div>
         )}
       </div>
-
-      {/* QWERTY Rows */}
-      <div className="tv-keyboard-board mx-auto max-w-[820px] space-y-1.5">
-        {KEYBOARD_ROWS.map((row, rIdx) => (
-          <div key={rIdx} className="flex justify-center gap-1.5">
-            {row.map((k) => {
-              const isTarget =
-                target.keyCode === k.code || target.shiftSide === k.code;
-              const zoneColor = FINGER_COLOR[k.finger];
-              return (
-                <div
-                  key={k.code}
-                  ref={(el) => {
-                    if (el) keyElsRef.current.set(k.code, el);
-                    else keyElsRef.current.delete(k.code);
-                  }}
-                  data-target={isTarget ? 'true' : undefined}
-                  className={`tv-keycap-3d relative flex flex-col items-center justify-center rounded-lg border h-10 sm:h-11 text-xs font-typing font-semibold transition-colors ${
-                    k.widthClass ?? 'flex-1 max-w-[52px]'
-                  }`}
-                  style={
-                    {
-                      backgroundColor: isTarget ? zoneColor : 'var(--tv-bg)',
-                      color: isTarget ? '#04131B' : 'var(--tv-text)',
-                      borderColor: isTarget ? zoneColor : `${zoneColor}55`,
-                      boxShadow: isTarget ? `0 0 14px ${zoneColor}66` : undefined,
-                      '--tv-key-glow': `${zoneColor}77`,
-                    } as React.CSSProperties
-                  }
-                >
-                  {k.shiftLabel && (
-                    <span className="text-[9px] leading-none opacity-65 mb-0.5">
-                      {k.shiftLabel}
-                    </span>
-                  )}
-                  <span className="leading-none">{k.label}</span>
-                  {k.isHomeAnchor && (
-                    <span
-                      className="absolute bottom-1 w-2.5 h-0.5 rounded-full"
-                      style={{
-                        backgroundColor: isTarget ? '#04131B' : zoneColor,
-                      }}
-                      aria-hidden="true"
-                    />
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        ))}
-      </div>
-
-      {/* SVG Two-Hand Finger Guide */}
-      {showFingerGuide && (
-        <div
-          className="pt-2 border-t flex flex-wrap items-center justify-center gap-6"
-          style={{borderColor: 'var(--tv-border)'}}
-        >
-          <HandGuideSvg side="left" activeFingers={activeFingers} />
-          <div className="text-center space-y-1 min-w-[140px]">
-            <div className="text-[11px] uppercase tracking-wider font-semibold" style={{color: 'var(--tv-text-muted)'}}>
-              Finger Zones
-            </div>
-            <div className="flex flex-wrap justify-center gap-x-3 gap-y-1 text-[11px]" style={{color: 'var(--tv-text-muted)'}}>
-              <span>Pinky</span>
-              <span>Ring</span>
-              <span>Middle</span>
-              <span>Index</span>
-              <span>Thumb</span>
-            </div>
-          </div>
-          <HandGuideSvg side="right" activeFingers={activeFingers} />
-        </div>
-      )}
     </section>
   );
 };
@@ -369,7 +407,9 @@ export const VirtualKeyboard: React.FC<VirtualKeyboardProps> = ({
 const HandGuideSvg: React.FC<{
   side: 'left' | 'right';
   activeFingers: Set<FingerId>;
-}> = ({side, activeFingers}) => {
+  width: number;
+  height: number;
+}> = ({side, activeFingers, width, height}) => {
   const isLeft = side === 'left';
   const fingers: Array<{id: FingerId; x: number; y: number; h: number}> = isLeft
     ? [
@@ -388,7 +428,11 @@ const HandGuideSvg: React.FC<{
       ];
 
   return (
-    <svg viewBox="0 0 110 86" className="w-24 h-16" aria-label={`${side} hand finger guide`}>
+    <svg
+      viewBox="0 0 110 86"
+      style={{width: `${width}px`, height: `${height}px`}}
+      aria-label={`${side} hand finger guide`}
+    >
       <rect
         x={isLeft ? 16 : 28}
         y="52"

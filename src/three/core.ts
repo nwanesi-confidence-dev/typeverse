@@ -207,6 +207,12 @@ export function disposeSessionEnvironment(): void {
   sharedSessionEnv = null;
 }
 
+export function disposeSessionEnvironmentIfRenderer(renderer: THREE.WebGLRenderer): void {
+  if (sharedSessionEnv && sharedSessionEnv.rendererRef === renderer) {
+    disposeSessionEnvironment();
+  }
+}
+
 /**
  * Configures balanced three-point Realistic studio lighting with tight-frustum 2048px soft shadows.
  */
@@ -282,23 +288,53 @@ export interface ManagedRendererContext {
   dispose: () => void;
 }
 
+export interface PlayZoneProjection {
+  aspect: number;
+  fov: number;
+  distanceScale: number;
+}
+
+export function computePlayZoneProjection(
+  width: number,
+  height: number,
+  baseFov: number = 50,
+  refAspect: number = 16 / 9,
+  maxFov: number = 76,
+): PlayZoneProjection {
+  const safeW = Math.max(1, width);
+  const safeH = Math.max(1, height);
+  const aspect = Math.max(0.35, safeW / safeH);
+
+  if (aspect >= refAspect) {
+    return {
+      aspect,
+      fov: baseFov,
+      distanceScale: 1,
+    };
+  }
+
+  const halfBaseRad = (baseFov * Math.PI) / 360;
+  const requiredTanHalfV = Math.tan(halfBaseRad) * (refAspect / aspect);
+  const idealFov = (Math.atan(requiredTanHalfV) * 360) / Math.PI;
+  const fov = Math.min(maxFov, Math.max(baseFov, idealFov));
+  const actualTanHalfV = Math.tan((fov * Math.PI) / 360);
+  const distanceScale = Math.max(1, requiredTanHalfV / Math.max(0.001, actualTanHalfV));
+
+  return {aspect, fov, distanceScale};
+}
+
 export function fitPerspectiveCamera(
   camera: THREE.PerspectiveCamera,
   width: number,
   height: number,
   baseFov: number = 50,
-): void {
-  const safeH = Math.max(1, height);
-  const aspect = Math.max(0.5, width / safeH);
-  camera.aspect = aspect;
-  if (aspect > 2.0) {
-    camera.fov = Math.max(baseFov - 6, baseFov * (1.85 / aspect));
-  } else if (aspect < 1.25) {
-    camera.fov = Math.min(68, baseFov + (1.25 - aspect) * 18);
-  } else {
-    camera.fov = baseFov;
-  }
+  refAspect: number = 16 / 9,
+): number {
+  const proj = computePlayZoneProjection(width, height, baseFov, refAspect);
+  camera.aspect = proj.aspect;
+  camera.fov = proj.fov;
   camera.updateProjectionMatrix();
+  return proj.distanceScale;
 }
 
 export function createManagedRenderer(

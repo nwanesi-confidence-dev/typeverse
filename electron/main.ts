@@ -11,6 +11,14 @@ import {
 } from 'electron';
 import fs from 'fs';
 import path from 'path';
+import {
+  clampWindowBoundsToDisplays,
+  MIN_WINDOW_HEIGHT,
+  MIN_WINDOW_WIDTH,
+  resolveRestoredWindowBounds,
+  type PersistedWindowState,
+  type ResolvedWindowBounds,
+} from '../shared/windowBounds';
 
 declare const __BUILD_PACKS_URL__: string;
 
@@ -40,20 +48,6 @@ if (initialHwAccelDisabled) {
   app.disableHardwareAcceleration();
 }
 
-interface WindowState {
-  width: number;
-  height: number;
-  x?: number;
-  y?: number;
-  isMaximized?: boolean;
-}
-
-const DEFAULT_WINDOW_STATE: WindowState = {
-  width: 1280,
-  height: 800,
-  isMaximized: false,
-};
-
 const isMac = process.platform === 'darwin';
 const isWin = process.platform === 'win32';
 const devServerUrl = process.env.VITE_DEV_SERVER_URL || '';
@@ -62,6 +56,8 @@ let mainWindow: BrowserWindow | null = null;
 let saveBoundsTimer: ReturnType<typeof setTimeout> | null = null;
 let didFlushOnClose = false;
 let pendingCloseTimer: ReturnType<typeof setTimeout> | null = null;
+let lastDisplayScaleFactor = 1;
+let screenListenersRegistered = false;
 
 function getWindowStatePath(): string {
   return path.join(app.getPath('userData'), 'window-state.json');
@@ -89,58 +85,15 @@ function writeFileAtomic(targetPath: string, data: string | Buffer): void {
   }
 }
 
-function isRectVisibleOnAnyDisplay(x: number, y: number, width: number, height: number): boolean {
+function loadWindowState(): ResolvedWindowBounds {
+  const primary = screen.getPrimaryDisplay();
   const displays = screen.getAllDisplays();
-  if (displays.length === 0) return false;
-  const centerX = x + Math.floor(width / 2);
-  const centerY = y + Math.floor(height / 2);
-  return displays.some((display) => {
-    const area = display.workArea;
-    return (
-      centerX >= area.x &&
-      centerX <= area.x + area.width &&
-      centerY >= area.y &&
-      centerY <= area.y + area.height
-    );
-  });
-}
-
-function loadWindowState(): WindowState {
   try {
     const raw = fs.readFileSync(getWindowStatePath(), 'utf8');
-    const parsed = JSON.parse(raw) as Partial<WindowState>;
-    const width =
-      typeof parsed.width === 'number' && Number.isFinite(parsed.width)
-        ? Math.max(960, Math.round(parsed.width))
-        : DEFAULT_WINDOW_STATE.width;
-    const height =
-      typeof parsed.height === 'number' && Number.isFinite(parsed.height)
-        ? Math.max(600, Math.round(parsed.height))
-        : DEFAULT_WINDOW_STATE.height;
-
-    const hasCoords =
-      typeof parsed.x === 'number' &&
-      Number.isFinite(parsed.x) &&
-      typeof parsed.y === 'number' &&
-      Number.isFinite(parsed.y);
-
-    if (hasCoords && isRectVisibleOnAnyDisplay(parsed.x!, parsed.y!, width, height)) {
-      return {
-        width,
-        height,
-        x: Math.round(parsed.x!),
-        y: Math.round(parsed.y!),
-        isMaximized: Boolean(parsed.isMaximized),
-      };
-    }
-
-    return {
-      width,
-      height,
-      isMaximized: Boolean(parsed.isMaximized),
-    };
+    const parsed = JSON.parse(raw) as Partial<PersistedWindowState>;
+    return resolveRestoredWindowBounds(parsed, displays, primary);
   } catch {
-    return {...DEFAULT_WINDOW_STATE};
+    return resolveRestoredWindowBounds(null, displays, primary);
   }
 }
 
@@ -148,13 +101,16 @@ function persistWindowStateNow(): void {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   try {
     const isMaximized = mainWindow.isMaximized();
-    const bounds = isMaximized ? mainWindow.getNormalBounds() : mainWindow.getBounds();
-    const state: WindowState = {
-      width: Math.max(960, bounds.width),
-      height: Math.max(600, bounds.height),
+    const isFullScreen = mainWindow.isFullScreen();
+    const bounds =
+      isMaximized || isFullScreen ? mainWindow.getNormalBounds() : mainWindow.getBounds();
+    const state: PersistedWindowState = {
+      width: Math.max(MIN_WINDOW_WIDTH, bounds.width),
+      height: Math.max(MIN_WINDOW_HEIGHT, bounds.height),
       x: bounds.x,
       y: bounds.y,
       isMaximized,
+      isFullScreen,
     };
     writeFileAtomic(getWindowStatePath(), JSON.stringify(state, null, 2));
   } catch {
@@ -167,6 +123,49 @@ function schedulePersistWindowState(): void {
   saveBoundsTimer = setTimeout(() => {
     persistWindowStateNow();
   }, 250);
+}
+
+function notifyDisplayMetricsChanged(force = false): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  try {
+    const display = screen.getDisplayMatching(mainWindow.getBounds());
+    const scaleChanged = display.scaleFactor !== lastDisplayScaleFactor;
+    if (!force && !scaleChanged) return;
+    lastDisplayScaleFactor = display.scaleFactor;
+    mainWindow.webContents.send('desktop:display-metrics-changed', {
+      scaleFactor: display.scaleFactor,
+      workArea: display.workArea,
+    });
+  } catch {
+    // Ignore transient display lookup errors
+  }
+}
+
+function registerScreenDisplayListeners(): void {
+  if (screenListenersRegistered) return;
+  screenListenersRegistered = true;
+
+  screen.on('display-metrics-changed', () => {
+    notifyDisplayMetricsChanged(true);
+  });
+
+  screen.on('display-added', () => {
+    notifyDisplayMetricsChanged(true);
+  });
+
+  screen.on('display-removed', () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (!mainWindow.isMaximized() && !mainWindow.isFullScreen()) {
+      const clamped = clampWindowBoundsToDisplays(
+        mainWindow.getBounds(),
+        screen.getAllDisplays(),
+        screen.getPrimaryDisplay(),
+      );
+      mainWindow.setBounds(clamped);
+    }
+    notifyDisplayMetricsChanged(true);
+    schedulePersistWindowState();
+  });
 }
 
 function isSafeHttpsUrl(rawUrl: string): boolean {
@@ -454,8 +453,8 @@ function createMainWindow(): void {
     height: state.height,
     x: state.x,
     y: state.y,
-    minWidth: 960,
-    minHeight: 600,
+    minWidth: MIN_WINDOW_WIDTH,
+    minHeight: MIN_WINDOW_HEIGHT,
     backgroundColor: '#080B14',
     show: false,
     autoHideMenuBar: !isMac,
@@ -471,23 +470,47 @@ function createMainWindow(): void {
     },
   });
 
+  lastDisplayScaleFactor = screen.getDisplayMatching(mainWindow.getBounds()).scaleFactor;
+
   if (!isMac) {
     mainWindow.setMenuBarVisibility(false);
   }
 
   mainWindow.once('ready-to-show', () => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
-    if (state.isMaximized) {
+    if (state.isMaximized && !state.isFullScreen) {
       mainWindow.maximize();
     }
     mainWindow.show();
+    if (state.isFullScreen) {
+      mainWindow.setFullScreen(true);
+    }
+    notifyDisplayMetricsChanged(true);
     void setupAutoUpdater();
   });
 
-  mainWindow.on('resize', schedulePersistWindowState);
-  mainWindow.on('move', schedulePersistWindowState);
+  mainWindow.on('resize', () => {
+    schedulePersistWindowState();
+    notifyDisplayMetricsChanged(false);
+  });
+  mainWindow.on('move', () => {
+    schedulePersistWindowState();
+    notifyDisplayMetricsChanged(false);
+  });
+  mainWindow.on('moved', () => {
+    schedulePersistWindowState();
+    notifyDisplayMetricsChanged(false);
+  });
   mainWindow.on('maximize', schedulePersistWindowState);
   mainWindow.on('unmaximize', schedulePersistWindowState);
+  mainWindow.on('enter-full-screen', () => {
+    schedulePersistWindowState();
+    notifyDisplayMetricsChanged(true);
+  });
+  mainWindow.on('leave-full-screen', () => {
+    schedulePersistWindowState();
+    notifyDisplayMetricsChanged(true);
+  });
 
   mainWindow.on('close', (event) => {
     persistWindowStateNow();
@@ -768,6 +791,7 @@ if (!gotLock) {
 
     Menu.setApplicationMenu(buildApplicationMenu());
     registerIpcHandlers();
+    registerScreenDisplayListeners();
     createMainWindow();
 
     app.on('activate', () => {

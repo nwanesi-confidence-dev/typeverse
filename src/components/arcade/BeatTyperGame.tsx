@@ -4,11 +4,13 @@ import {
   BEAT_TYPER_FIELD_HEIGHT,
   BeatTyperEngine,
 } from '@/src/arcade/engine/beatTyperEngine';
+import {CANONICAL_PLAY_WIDTH} from '@/src/arcade/playZone';
 import {
   renderBeatTyper2D,
   type JudgementToast2D,
 } from '@/src/arcade/renderer-2d/BeatTyper2D';
 import {BeatTyper3D} from '@/src/arcade/renderer-3d/BeatTyper3D';
+import {useCanvas2DResizeObserver} from '@/src/arcade/usePlayfieldSize';
 import {soundEngine} from '@/src/audio/soundEngine';
 import {
   DIFFICULTY_META,
@@ -42,6 +44,7 @@ export const BeatTyperGame: React.FC<ArcadeCommonProps> = ({
     lockedMode,
     show3D,
     webgl2Supported,
+    isSoftwareRenderer,
     contextLostOpen,
     webglRetryNonce,
     markContextLost,
@@ -139,9 +142,7 @@ export const BeatTyperGame: React.FC<ArcadeCommonProps> = ({
         setRoundStarted(true);
       }
 
-      const canvas = canvasRef.current;
-      const h = !show3D && canvas ? canvas.clientHeight : BEAT_TYPER_FIELD_HEIGHT;
-      const w = !show3D && canvas ? canvas.clientWidth : 720;
+      const h = BEAT_TYPER_FIELD_HEIGHT;
       const strikeY = h - 58;
 
       const res = eng.handleKey(e.key, h);
@@ -151,8 +152,8 @@ export const BeatTyperGame: React.FC<ArcadeCommonProps> = ({
         soundEngine.playHitChime('miss');
       } else {
         soundEngine.playHitChime(res.grade);
-        if (!show3D && canvas && res.lane !== undefined) {
-          const laneW = w / 4;
+        if (!show3D && res.lane !== undefined) {
+          const laneW = CANONICAL_PLAY_WIDTH / 4;
           const nx = res.lane * laneW + laneW / 2;
           toasts2DRef.current.push({
             text: res.grade === 'perfect' ? 'PERFECT!' : 'GOOD',
@@ -189,6 +190,26 @@ export const BeatTyperGame: React.FC<ArcadeCommonProps> = ({
     };
   }, [lockedMode, show3D, onFinish, onExit]);
 
+  const render2DFrame = useCallback(
+    (dtSec: number) => {
+      if (show3D || !canvasRef.current) return;
+      const eng = engineRef.current;
+      renderBeatTyper2D({
+        canvas: canvasRef.current,
+        state: eng.state,
+        bpm: eng.cfg.bpm,
+        totalNotes: eng.cfg.totalNotes,
+        toasts: toasts2DRef.current,
+        dtSec,
+        resolvedMode: lockedMode,
+        isSoftwareRenderer,
+      });
+    },
+    [show3D, lockedMode, isSoftwareRenderer],
+  );
+
+  useCanvas2DResizeObserver(canvasRef, !show3D, () => render2DFrame(0));
+
   useEffect(() => {
     let raf = 0;
     let lastTs = performance.now();
@@ -198,9 +219,8 @@ export const BeatTyperGame: React.FC<ArcadeCommonProps> = ({
       const dt = Math.min(0.05, (now - lastTs) / 1000);
       lastTs = now;
       const eng = engineRef.current;
-      const canvas = canvasRef.current;
 
-      const h = !show3D && canvas ? canvas.clientHeight : BEAT_TYPER_FIELD_HEIGHT;
+      const h = BEAT_TYPER_FIELD_HEIGHT;
       const strikeY = h - 58;
       const stepRes = eng.step(dt, h, now);
 
@@ -208,8 +228,8 @@ export const BeatTyperGame: React.FC<ArcadeCommonProps> = ({
         soundEngine.playBeatTick(stepRes.accentBeat);
       }
 
-      if (!show3D && canvas && stepRes.missedNotes.length > 0) {
-        const laneW = canvas.clientWidth / 4;
+      if (!show3D && stepRes.missedNotes.length > 0) {
+        const laneW = CANONICAL_PLAY_WIDTH / 4;
         for (const m of stepRes.missedNotes) {
           toasts2DRef.current.push({
             text: 'MISS',
@@ -229,16 +249,7 @@ export const BeatTyperGame: React.FC<ArcadeCommonProps> = ({
         });
       }
 
-      if (!show3D && canvas) {
-        renderBeatTyper2D({
-          canvas,
-          state: eng.state,
-          bpm: eng.cfg.bpm,
-          totalNotes: eng.cfg.totalNotes,
-          toasts: toasts2DRef.current,
-          dtSec: dt,
-        });
-      }
+      render2DFrame(dt);
 
       if (now - lastHud >= 33) {
         lastHud = now;
@@ -266,7 +277,7 @@ export const BeatTyperGame: React.FC<ArcadeCommonProps> = ({
 
     raf = window.requestAnimationFrame(loop);
     return () => window.cancelAnimationFrame(raf);
-  }, [difficulty, lockedMode, show3D, onFinish, onTelemetry]);
+  }, [difficulty, lockedMode, render2DFrame, show3D, onFinish, onTelemetry]);
 
   const beat3DState: BeatTyper3DState = useMemo(
     () => ({
@@ -284,18 +295,18 @@ export const BeatTyperGame: React.FC<ArcadeCommonProps> = ({
   };
 
   return (
-    <div className="tv-surface rounded-2xl p-5 space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="text-xs font-medium flex flex-wrap items-center gap-2" style={{color: 'var(--tv-text-muted)'}}>
-          <span>Beat Typer · {DIFFICULTY_META[difficulty].label} ({engineRef.current.cfg.bpm} BPM) · Strike the falling key as it hits the glowing bar</span>
+    <div className="tv-surface rounded-2xl p-3 sm:p-4 flex flex-col gap-2.5 flex-1 min-h-0">
+      <div className="shrink-0 flex flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0 text-xs font-medium flex flex-wrap items-center gap-2" style={{color: 'var(--tv-text-muted)'}}>
+          <span className="truncate">Beat Typer · {DIFFICULTY_META[difficulty].label} ({engineRef.current.cfg.bpm} BPM) · Strike the falling key as it hits the glowing bar</span>
           <span
-            className="rounded-md border px-2 py-0.5 text-[11px] font-semibold"
+            className="rounded-md border px-2 py-0.5 text-[11px] font-semibold shrink-0"
             style={{borderColor: 'var(--tv-border)', backgroundColor: 'var(--tv-bg)'}}
           >
             {formatResolvedModeLabel(lockedMode)}
           </span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
             onClick={togglePause}
@@ -330,7 +341,7 @@ export const BeatTyperGame: React.FC<ArcadeCommonProps> = ({
         />
       )}
 
-      <div className="relative rounded-xl overflow-hidden border" style={{borderColor: 'var(--tv-border)'}}>
+      <div className="relative flex-1 min-h-[200px] rounded-xl overflow-hidden border" style={{borderColor: 'var(--tv-border)'}}>
         {show3D ? (
           <BeatTyper3D
             gameId="beat-typer"
@@ -345,7 +356,7 @@ export const BeatTyperGame: React.FC<ArcadeCommonProps> = ({
         ) : (
           <canvas
             ref={canvasRef}
-            className="block w-full h-[360px]"
+            className="block w-full h-full"
             aria-label="Beat Typer rhythm canvas"
           />
         )}

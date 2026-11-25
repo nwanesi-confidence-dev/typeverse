@@ -44,6 +44,12 @@ export interface DesktopBridge {
   isFullscreen: () => Promise<boolean>;
   openExternal: (url: string) => Promise<boolean>;
   setTitle: (title: string) => void;
+  onDisplayMetricsChanged?: (
+    callback: (info: {
+      scaleFactor: number;
+      workArea: {x: number; y: number; width: number; height: number};
+    }) => void,
+  ) => () => void;
   hwAccel: {
     getDisabled: () => Promise<boolean>;
     getGpuFeatureStatus: () => Promise<Record<string, string>>;

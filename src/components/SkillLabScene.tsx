@@ -1,7 +1,9 @@
 import React, {useCallback, useEffect, useMemo, useState} from 'react';
-import {ArrowLeft, RefreshCw, Target, Zap} from 'lucide-react';
+import {ArrowLeft, Keyboard, RefreshCw, Target, Zap} from 'lucide-react';
 import {soundEngine} from '@/src/audio/soundEngine';
+import {AdaptiveSceneLayout} from '@/src/components/AdaptiveSceneLayout';
 import {KeyboardHeatmap} from '@/src/components/KeyboardHeatmap';
+import {LiveSessionStatsPanel} from '@/src/components/LiveSessionSidePanels';
 import {SessionResults} from '@/src/components/SessionResults';
 import {TypingArena} from '@/src/components/TypingArena';
 import {WpmHud} from '@/src/components/WpmHud';
@@ -15,7 +17,8 @@ import {
 } from '@/src/db/storage';
 import type {ProfileProgress} from '@/src/types/app';
 import type {CompletedSessionStats, TypingTelemetrySnapshot} from '@/src/types/typing';
-import {recordSessionAndBadges} from '@/src/utils/progression';
+import {getTodayActivitySeconds, recordSessionAndBadges} from '@/src/utils/progression';
+import {useScreenInfo} from '@/src/utils/screenInfo';
 
 interface SkillLabSceneProps {
   onBack: () => void;
@@ -55,6 +58,8 @@ export const SkillLabScene: React.FC<SkillLabSceneProps> = ({
   activeProfileId,
 }) => {
   const {settings} = useAppearance();
+  const screen = useScreenInfo();
+  const [diagnosticsDrawerOpen, setDiagnosticsDrawerOpen] = useState(false);
   const [progress, setProgress] = useState<ProfileProgress | null>(null);
   const [profileName, setProfileName] = useState('Typist');
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
@@ -205,81 +210,215 @@ export const SkillLabScene: React.FC<SkillLabSceneProps> = ({
   );
 
   const isFocus = settings.layout === 'focus';
+  const showInlineDiagnosticsBelow =
+    !isFocus && !screen.showSidePanels && screen.height >= 900 && !results;
+
+  const weakRankingsPanels = (
+    <div className="space-y-4">
+      <div className="tv-surface rounded-2xl p-4 space-y-3">
+        <div className="flex items-center gap-2 text-sm font-bold font-display">
+          <Target className="w-4 h-4" style={{color: 'var(--tv-accent)'}} aria-hidden="true" />
+          <span>Weakest Keys</span>
+        </div>
+        {weakKeyRankings.length === 0 ? (
+          <p className="text-xs" style={{color: 'var(--tv-text-muted)'}}>
+            Complete a short drill above to populate per-key latency and error rankings.
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {weakKeyRankings.map((item) => (
+              <li
+                key={item.key}
+                className="flex items-center justify-between text-xs py-1 border-b last:border-b-0"
+                style={{borderColor: 'var(--tv-border)'}}
+              >
+                <button
+                  type="button"
+                  onClick={() => handleToggleKey(item.key)}
+                  className="font-typing font-bold uppercase px-2 py-0.5 rounded border hover:opacity-80"
+                  style={{borderColor: 'var(--tv-border)', backgroundColor: 'var(--tv-bg)'}}
+                >
+                  {item.key}
+                </button>
+                <span className="font-typing tabular-nums" style={{color: 'var(--tv-text-muted)'}}>
+                  {item.avgMs} ms · {item.errRate}% err
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="tv-surface rounded-2xl p-4 space-y-3">
+        <div className="flex items-center gap-2 text-sm font-bold font-display">
+          <Zap className="w-4 h-4" style={{color: 'var(--tv-warning)'}} aria-hidden="true" />
+          <span>Slowest Bigrams</span>
+        </div>
+        {weakBigramRankings.length === 0 ? (
+          <p className="text-xs" style={{color: 'var(--tv-text-muted)'}}>
+            Default focus pairs: {FALLBACK_BIGRAMS.join(', ')}
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {weakBigramRankings.map((item) => (
+              <li
+                key={item.bigram}
+                className="flex items-center justify-between text-xs py-1 border-b last:border-b-0"
+                style={{borderColor: 'var(--tv-border)'}}
+              >
+                <span
+                  className="font-typing font-bold px-2 py-0.5 rounded border"
+                  style={{borderColor: 'var(--tv-border)', backgroundColor: 'var(--tv-bg)'}}
+                >
+                  {item.bigram}
+                </span>
+                <span className="font-typing tabular-nums" style={{color: 'var(--tv-text-muted)'}}>
+                  {item.avgMs} ms · {item.errRate}% err
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
 
   return (
-    <main className="mx-auto max-w-[1360px] px-4 py-6 sm:px-6 space-y-5">
-      {!isFocus && (
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="space-y-1">
-            <button
-              type="button"
-              onClick={onBack}
-              className="inline-flex items-center gap-1.5 text-xs font-medium hover:opacity-80"
-              style={{color: 'var(--tv-accent)'}}
-            >
-              <ArrowLeft className="w-3.5 h-3.5" aria-hidden="true" />
-              <span>Back to Hub (Esc)</span>
-            </button>
-            <h1 className="font-display text-3xl font-bold tracking-tight">Skill Lab</h1>
-            <p className="text-sm" style={{color: 'var(--tv-text-muted)'}}>
-              Adaptive drills generated from your slowest keys and error-prone bigrams.
-            </p>
-          </div>
+    <AdaptiveSceneLayout
+      playLocked={!results && (screen.showSidePanels || screen.height < 900)}
+      drawerOpen={diagnosticsDrawerOpen}
+      drawerTitle="Skill Lab Heatmap & Rankings"
+      onCloseDrawer={() => setDiagnosticsDrawerOpen(false)}
+      drawerContent={
+        <>
+          <KeyboardHeatmap
+            keyMetrics={progress?.keyMetrics ?? {}}
+            selectedKeys={selectedKeys}
+            onToggleKey={handleToggleKey}
+          />
+          {weakRankingsPanels}
+        </>
+      }
+      topBar={
+        !isFocus ? (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <button
+                type="button"
+                onClick={onBack}
+                className="inline-flex items-center gap-1.5 text-xs font-medium hover:opacity-80 shrink-0"
+                style={{color: 'var(--tv-accent)'}}
+              >
+                <ArrowLeft className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>Hub (Esc)</span>
+              </button>
+              <h1
+                className="font-display font-bold tracking-tight truncate"
+                style={{fontSize: 'var(--tv-text-xl)'}}
+              >
+                Skill Lab
+              </h1>
+            </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <div
-              className="flex items-center gap-1 rounded-xl border p-1"
-              style={{backgroundColor: 'var(--tv-surface)', borderColor: 'var(--tv-border)'}}
-            >
-              {(
-                [
-                  {id: 'auto', label: 'Adaptive Mix'},
-                  {id: 'bigrams', label: 'Tricky Bigrams'},
-                  {id: 'custom', label: 'Selected Keys'},
-                ] as const
-              ).map((m) => (
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <div
+                className="flex items-center gap-1 rounded-xl border p-1"
+                style={{backgroundColor: 'var(--tv-surface)', borderColor: 'var(--tv-border)'}}
+              >
+                {(
+                  [
+                    {id: 'auto', label: 'Adaptive Mix'},
+                    {id: 'bigrams', label: 'Bigrams'},
+                    {id: 'custom', label: 'Selected Keys'},
+                  ] as const
+                ).map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => {
+                      soundEngine.playUiTap();
+                      setDrillMode(m.id);
+                    }}
+                    className="rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors whitespace-nowrap"
+                    style={{
+                      backgroundColor: drillMode === m.id ? 'var(--tv-accent)' : 'transparent',
+                      color: drillMode === m.id ? 'var(--tv-accent-fg)' : 'var(--tv-text-muted)',
+                    }}
+                  >
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+
+              {!screen.showSidePanels && (
                 <button
-                  key={m.id}
                   type="button"
                   onClick={() => {
                     soundEngine.playUiTap();
-                    setDrillMode(m.id);
+                    setDiagnosticsDrawerOpen(true);
                   }}
-                  className="rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors"
-                  style={{
-                    backgroundColor: drillMode === m.id ? 'var(--tv-accent)' : 'transparent',
-                    color: drillMode === m.id ? 'var(--tv-accent-fg)' : 'var(--tv-text-muted)',
-                  }}
+                  className="inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-medium"
+                  style={{borderColor: 'var(--tv-border)', backgroundColor: 'var(--tv-surface)'}}
                 >
-                  {m.label}
+                  <Keyboard className="w-3.5 h-3.5" style={{color: 'var(--tv-accent)'}} aria-hidden="true" />
+                  <span>Heatmap & Keys</span>
                 </button>
-              ))}
+              )}
+
+              <button
+                type="button"
+                onClick={() => {
+                  soundEngine.playUiTap();
+                  setRunSeed((s) => s + 1);
+                }}
+                className="inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-medium"
+                style={{borderColor: 'var(--tv-border)', backgroundColor: 'var(--tv-surface)'}}
+              >
+                <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>New Drill</span>
+              </button>
             </div>
-
-            <button
-              type="button"
-              onClick={() => {
-                soundEngine.playUiTap();
-                setRunSeed((s) => s + 1);
-              }}
-              className="inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-medium"
-              style={{borderColor: 'var(--tv-border)', backgroundColor: 'var(--tv-surface)'}}
-            >
-              <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />
-              <span>New Drill</span>
-            </button>
           </div>
-        </div>
-      )}
-
-      {/* Live WPM Meter HUD */}
-      <WpmHud
-        telemetry={telemetry}
-        personalBestWpm={progress?.bestWpm ?? 0}
-        targetWpm={progress?.targetWpm ?? 60}
-      />
-
-      {/* Active Drill or Results */}
+        ) : undefined
+      }
+      leftPanel={
+        !isFocus ? (
+          <>
+            <LiveSessionStatsPanel telemetry={telemetry} progress={progress} modeFilter="skill-lab" />
+            {weakRankingsPanels}
+          </>
+        ) : undefined
+      }
+      rightPanel={
+        !isFocus ? (
+          <KeyboardHeatmap
+            keyMetrics={progress?.keyMetrics ?? {}}
+            selectedKeys={selectedKeys}
+            onToggleKey={handleToggleKey}
+          />
+        ) : undefined
+      }
+      hud={
+        <WpmHud
+          telemetry={telemetry}
+          personalBestWpm={progress?.bestWpm ?? 0}
+          targetWpm={progress?.targetWpm ?? 60}
+          dailyGoalMinutes={progress?.dailyGoalMinutes ?? 15}
+          todayActivitySeconds={getTodayActivitySeconds(progress)}
+        />
+      }
+      belowMain={
+        showInlineDiagnosticsBelow ? (
+          <div className="grid grid-cols-1 gap-4">
+            <KeyboardHeatmap
+              keyMetrics={progress?.keyMetrics ?? {}}
+              selectedKeys={selectedKeys}
+              onToggleKey={handleToggleKey}
+            />
+          </div>
+        ) : undefined
+      }
+    >
       {results ? (
         <SessionResults
           stats={results}
@@ -327,87 +466,6 @@ export const SkillLabScene: React.FC<SkillLabSceneProps> = ({
           />
         )
       )}
-
-      {/* Diagnostics: Heatmap + Weak Keys / Bigrams Cards */}
-      {!isFocus && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-          <div className="lg:col-span-8">
-            <KeyboardHeatmap
-              keyMetrics={progress?.keyMetrics ?? {}}
-              selectedKeys={selectedKeys}
-              onToggleKey={handleToggleKey}
-            />
-          </div>
-
-          <div className="lg:col-span-4 space-y-4">
-            <div className="tv-surface rounded-2xl p-5 space-y-3">
-              <div className="flex items-center gap-2 text-sm font-bold font-display">
-                <Target className="w-4 h-4" style={{color: 'var(--tv-accent)'}} aria-hidden="true" />
-                <span>Weakest Keys</span>
-              </div>
-              {weakKeyRankings.length === 0 ? (
-                <p className="text-xs" style={{color: 'var(--tv-text-muted)'}}>
-                  Complete a short drill above to populate per-key latency and error rankings.
-                </p>
-              ) : (
-                <ul className="space-y-2">
-                  {weakKeyRankings.map((item) => (
-                    <li
-                      key={item.key}
-                      className="flex items-center justify-between text-xs py-1 border-b last:border-b-0"
-                      style={{borderColor: 'var(--tv-border)'}}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => handleToggleKey(item.key)}
-                        className="font-typing font-bold uppercase px-2 py-0.5 rounded border hover:opacity-80"
-                        style={{borderColor: 'var(--tv-border)', backgroundColor: 'var(--tv-bg)'}}
-                      >
-                        {item.key}
-                      </button>
-                      <span className="font-typing tabular-nums" style={{color: 'var(--tv-text-muted)'}}>
-                        {item.avgMs} ms · {item.errRate}% err
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-
-            <div className="tv-surface rounded-2xl p-5 space-y-3">
-              <div className="flex items-center gap-2 text-sm font-bold font-display">
-                <Zap className="w-4 h-4" style={{color: 'var(--tv-warning)'}} aria-hidden="true" />
-                <span>Slowest Bigrams</span>
-              </div>
-              {weakBigramRankings.length === 0 ? (
-                <p className="text-xs" style={{color: 'var(--tv-text-muted)'}}>
-                  Default focus pairs: {FALLBACK_BIGRAMS.join(', ')}
-                </p>
-              ) : (
-                <ul className="space-y-2">
-                  {weakBigramRankings.map((item) => (
-                    <li
-                      key={item.bigram}
-                      className="flex items-center justify-between text-xs py-1 border-b last:border-b-0"
-                      style={{borderColor: 'var(--tv-border)'}}
-                    >
-                      <span
-                        className="font-typing font-bold px-2 py-0.5 rounded border"
-                        style={{borderColor: 'var(--tv-border)', backgroundColor: 'var(--tv-bg)'}}
-                      >
-                        {item.bigram}
-                      </span>
-                      <span className="font-typing tabular-nums" style={{color: 'var(--tv-text-muted)'}}>
-                        {item.avgMs} ms · {item.errRate}% err
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-    </main>
+    </AdaptiveSceneLayout>
   );
 };

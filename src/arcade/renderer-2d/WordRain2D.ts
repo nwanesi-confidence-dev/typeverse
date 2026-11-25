@@ -1,4 +1,11 @@
 import type {WordRainState} from '@/src/arcade/engine/wordRainEngine';
+import {
+  CANONICAL_PLAY_HEIGHT,
+  CANONICAL_PLAY_WIDTH,
+  computeCanvas2DBackingSize,
+  computePlayZoneViewport,
+} from '@/src/arcade/playZone';
+import type {ResolvedGraphicsMode} from '@/src/types/app';
 
 export interface Ripple2D {
   x: number;
@@ -14,37 +21,81 @@ export function renderWordRain2D(params: {
   goal: number;
   ripples: Ripple2D[];
   dtSec: number;
+  resolvedMode?: ResolvedGraphicsMode;
+  isSoftwareRenderer?: boolean;
 }): void {
-  const {canvas, state, goal, ripples, dtSec} = params;
-  const dpr = window.devicePixelRatio || 1;
+  const {
+    canvas,
+    state,
+    goal,
+    ripples,
+    dtSec,
+    resolvedMode = '2d',
+    isSoftwareRenderer = false,
+  } = params;
   const w = canvas.clientWidth;
   const h = canvas.clientHeight;
   if (w <= 0 || h <= 0) return;
 
-  if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
-    canvas.width = Math.round(w * dpr);
-    canvas.height = Math.round(h * dpr);
+  const backing = computeCanvas2DBackingSize({
+    cssWidth: w,
+    cssHeight: h,
+    devicePixelRatio: window.devicePixelRatio || 1,
+    resolvedMode,
+    isSoftwareRenderer,
+  });
+
+  if (canvas.width !== backing.width || canvas.height !== backing.height) {
+    canvas.width = backing.width;
+    canvas.height = backing.height;
   }
 
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
 
-  ctx.save();
-  ctx.scale(dpr, dpr);
+  const vp = computePlayZoneViewport(w, h);
+  const pw = CANONICAL_PLAY_WIDTH;
+  const ph = CANONICAL_PLAY_HEIGHT;
 
+  ctx.save();
+  ctx.setTransform(backing.scaleX, 0, 0, backing.scaleY, 0, 0);
+
+  // Full-bleed serene rain sky & extended pond waterline
   const bg = ctx.createLinearGradient(0, 0, 0, h);
   bg.addColorStop(0, '#09152B');
   bg.addColorStop(1, '#0F2744');
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, w, h);
 
+  const pondTopPx = vp.playY + (ph - 34) * vp.scale;
   ctx.fillStyle = 'rgba(56, 189, 248, 0.14)';
-  ctx.fillRect(0, h - 34, w, 34);
+  ctx.fillRect(0, pondTopPx, w, Math.max(0, h - pondTopPx));
+  ctx.fillStyle = 'rgba(56, 189, 248, 0.25)';
+  ctx.fillRect(0, pondTopPx, w, 1.5);
+
+  if (vp.isExtendedWide) {
+    ctx.strokeStyle = 'rgba(56, 189, 248, 0.14)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([6, 8]);
+    ctx.beginPath();
+    ctx.moveTo(vp.playX, vp.playY + 12);
+    ctx.lineTo(vp.playX, pondTopPx);
+    ctx.moveTo(vp.playX + vp.playW, vp.playY + 12);
+    ctx.lineTo(vp.playX + vp.playW, pondTopPx);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Enter canonical 16:9 (640x360) play zone
+  ctx.translate(vp.playX, vp.playY);
+  ctx.scale(vp.scale, vp.scale);
 
   for (let i = ripples.length - 1; i >= 0; i--) {
     const rp = ripples[i];
-    rp.radius += dtSec * 75;
-    rp.life -= dtSec * 1.9;
+    if (dtSec > 0) {
+      rp.radius += dtSec * 75;
+      rp.life -= dtSec * 1.9;
+    }
     if (rp.life <= 0) {
       ripples.splice(i, 1);
     } else {
@@ -59,7 +110,7 @@ export function renderWordRain2D(params: {
   ctx.globalAlpha = 1;
 
   for (const d of state.drops) {
-    const dx = d.x * w;
+    const dx = d.x * pw;
     const dy = d.y;
     const locked = state.lockedId === d.id;
 

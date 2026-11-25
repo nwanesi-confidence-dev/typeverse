@@ -5,7 +5,14 @@ export type ThemeId =
   | 'classroom-light'
   | 'high-contrast';
 
-export type LayoutDensity = 'comfortable' | 'compact' | 'focus';
+export type LayoutPreference = 'auto' | 'standard' | 'wide' | 'focus';
+export type LayoutDensity = LayoutPreference;
+export type InterfaceSizePreference =
+  | 'auto'
+  | 'small'
+  | 'medium'
+  | 'large'
+  | 'extra-large';
 export type TextSize = 'S' | 'M' | 'L' | 'XL';
 export type FontChoice = 'jetbrains-mono' | 'ibm-plex-mono' | 'system-mono';
 export type CaretStyle = 'line' | 'block' | 'underline';
@@ -127,7 +134,9 @@ export type SceneId =
 
 export interface AppearanceSettings {
   theme: ThemeId;
-  layout: LayoutDensity;
+  layout: LayoutPreference;
+  interfaceSize: InterfaceSizePreference;
+  widePanels: boolean;
   textSize: TextSize;
   fontChoice: FontChoice;
   keyboardVisible: boolean;
@@ -142,7 +151,9 @@ export interface AppearanceSettings {
 
 export const DEFAULT_SETTINGS: AppearanceSettings = {
   theme: 'midnight-neon',
-  layout: 'comfortable',
+  layout: 'auto',
+  interfaceSize: 'auto',
+  widePanels: true,
   textSize: 'L',
   fontChoice: 'jetbrains-mono',
   keyboardVisible: true,

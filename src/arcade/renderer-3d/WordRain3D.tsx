@@ -1,4 +1,5 @@
-import React from 'react';
+import React, {useRef} from 'react';
+import {usePlayfieldSafeInsets} from '@/src/arcade/usePlayfieldSize';
 import {ThreeCanvasHost} from '@/src/three/ThreeCanvasHost';
 import type {WordRain3DState} from '@/src/three/scenes/wordRain3DScene';
 import type {GraphicsGameId, ResolvedGraphicsMode} from '@/src/types/app';
@@ -27,28 +28,35 @@ export const WordRain3D: React.FC<WordRain3DProps> = ({
   sceneState,
   goal,
   hud,
-}) => (
-  <div className="relative w-full h-[360px] bg-[#071226]">
-    <ThreeCanvasHost
-      loadScene={loadWordRain3DScene}
-      sceneKey="word-rain-3d"
-      gameId={gameId}
-      forcedMode={forcedMode}
-      retryNonce={retryNonce}
-      onContextLostPermanent={onContextLostPermanent}
-      sceneState={sceneState}
-      isTypingActive={true}
-      className="w-full h-full pointer-events-none"
-    />
-    <div
-      className="pointer-events-none absolute top-3 left-3 z-10 rounded-lg border px-3 py-1.5 font-typing text-xs font-bold tracking-wide tabular-nums"
-      style={{
-        backgroundColor: 'rgba(7, 18, 38, 0.88)',
-        borderColor: 'var(--tv-border)',
-        color: '#E2E8F0',
-      }}
-    >
-      LIVES {'♦'.repeat(Math.max(0, hud.lives))} · DROPS {hud.clears}/{goal} · SCORE {hud.score}
+}) => {
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const safe = usePlayfieldSafeInsets(wrapperRef);
+
+  return (
+    <div ref={wrapperRef} className="relative w-full h-full min-h-[200px] bg-[#071226]">
+      <ThreeCanvasHost
+        loadScene={loadWordRain3DScene}
+        sceneKey="word-rain-3d"
+        gameId={gameId}
+        forcedMode={forcedMode}
+        retryNonce={retryNonce}
+        onContextLostPermanent={onContextLostPermanent}
+        sceneState={sceneState}
+        isTypingActive={true}
+        className="w-full h-full pointer-events-none"
+      />
+      <div
+        className="pointer-events-none absolute z-10 rounded-lg border px-3 py-1.5 font-typing text-xs font-bold tracking-wide tabular-nums max-w-[calc(100%-24px)] truncate"
+        style={{
+          top: `${safe.topPx}px`,
+          left: `${safe.leftPx}px`,
+          backgroundColor: 'rgba(7, 18, 38, 0.88)',
+          borderColor: 'var(--tv-border)',
+          color: '#E2E8F0',
+        }}
+      >
+        LIVES {'♦'.repeat(Math.max(0, hud.lives))} · DROPS {hud.clears}/{goal} · SCORE {hud.score}
+      </div>
     </div>
-  </div>
-);
+  );
+};

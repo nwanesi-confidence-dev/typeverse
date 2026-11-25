@@ -2,6 +2,7 @@ import React, {useCallback, useEffect, useMemo, useState} from 'react';
 import {
   ArrowLeft,
   Award,
+  BookOpen,
   CheckCircle2,
   Eye,
   EyeOff,
@@ -10,6 +11,11 @@ import {
   Star,
 } from 'lucide-react';
 import {soundEngine} from '@/src/audio/soundEngine';
+import {AdaptiveSceneLayout} from '@/src/components/AdaptiveSceneLayout';
+import {
+  CompactKeyHeatmapPanel,
+  LiveSessionStatsPanel,
+} from '@/src/components/LiveSessionSidePanels';
 import {SessionResults} from '@/src/components/SessionResults';
 import {TypingArena} from '@/src/components/TypingArena';
 import {VirtualKeyboard} from '@/src/components/VirtualKeyboard';
@@ -35,7 +41,8 @@ import {
 import type {ProfileProgress} from '@/src/types/app';
 import type {CompletedSessionStats, TypingTelemetrySnapshot} from '@/src/types/typing';
 import {adaptTextSpelling} from '@/src/utils/copy';
-import {recordSessionAndBadges} from '@/src/utils/progression';
+import {getTodayActivitySeconds, recordSessionAndBadges} from '@/src/utils/progression';
+import {useScreenInfo} from '@/src/utils/screenInfo';
 
 interface ClassroomSceneProps {
   onBack: () => void;
@@ -73,6 +80,8 @@ export const ClassroomScene: React.FC<ClassroomSceneProps> = ({
   activeProfileId,
 }) => {
   const {settings, updateSetting} = useAppearance();
+  const screen = useScreenInfo();
+  const [lessonDrawerOpen, setLessonDrawerOpen] = useState(false);
   const [selectedStageId, setSelectedStageId] = useState<number>(1);
   const [activeLesson, setActiveLesson] = useState<ClassroomLesson | null>(null);
   const [isPlacementMode, setIsPlacementMode] = useState(false);
@@ -282,6 +291,87 @@ export const ClassroomScene: React.FC<ClassroomSceneProps> = ({
 
   const inLessonView = Boolean(activeLesson) || isPlacementMode;
   const isFocus = settings.layout === 'focus';
+  const currentStage =
+    LESSON_STAGES.find((s) => s.id === (activeLesson?.stageId ?? selectedStageId)) ??
+    LESSON_STAGES[0];
+
+  const lessonSwitcherPanel = (
+    <section className="tv-surface rounded-2xl p-4 space-y-3" aria-label="Stage lessons">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="font-display text-sm font-bold flex items-center gap-2">
+          <BookOpen className="w-4 h-4 shrink-0" style={{color: 'var(--tv-accent)'}} aria-hidden="true" />
+          <span className="truncate">Stage {currentStage.id}: {currentStage.title}</span>
+        </h3>
+        <span className="text-[11px] font-typing" style={{color: 'var(--tv-text-muted)'}}>
+          {currentStage.targetWpm}+ WPM
+        </span>
+      </div>
+
+      <div className="flex flex-wrap gap-1">
+        {LESSON_STAGES.map((stage) => {
+          const stageList = CLASSROOM_LESSONS.filter((l) => l.stageId === stage.id);
+          const firstIdx = stageList[0]?.index ?? 0;
+          const stageUnlocked = unlockedIndex >= firstIdx;
+          const active = currentStage.id === stage.id;
+          return (
+            <button
+              key={stage.id}
+              type="button"
+              disabled={!stageUnlocked}
+              onClick={() => {
+                soundEngine.playUiTap();
+                setSelectedStageId(stage.id);
+                const first = stageList[0];
+                if (first && first.index <= unlockedIndex) {
+                  startLesson(first);
+                }
+              }}
+              className="rounded-lg border px-2 py-1 text-[11px] font-semibold disabled:opacity-45"
+              style={{
+                borderColor: active ? 'var(--tv-accent)' : 'var(--tv-border)',
+                backgroundColor: active ? 'var(--tv-accent)' : 'var(--tv-bg)',
+                color: active ? 'var(--tv-accent-fg)' : 'var(--tv-text-muted)',
+              }}
+            >
+              S{stage.id}
+            </button>
+          );
+        })}
+      </div>
+
+      <ul className="space-y-1.5">
+        {CLASSROOM_LESSONS.filter((l) => l.stageId === currentStage.id).map((lesson) => {
+          const unlocked = lesson.index <= unlockedIndex;
+          const stars = progress?.lessonStars[lesson.id] ?? 0;
+          const isCurrent = activeLesson?.id === lesson.id;
+          return (
+            <li key={lesson.id}>
+              <button
+                type="button"
+                disabled={!unlocked}
+                onClick={() => {
+                  startLesson(lesson);
+                  setLessonDrawerOpen(false);
+                }}
+                className="w-full rounded-xl border px-3 py-2 text-left text-xs flex items-center justify-between gap-2 disabled:opacity-50"
+                style={{
+                  borderColor: isCurrent ? 'var(--tv-accent)' : 'var(--tv-border)',
+                  backgroundColor: isCurrent ? 'var(--tv-surface-elevated)' : 'var(--tv-bg)',
+                }}
+              >
+                <span className="truncate font-medium">
+                  {lesson.index + 1}. {lesson.title}
+                </span>
+                <span className="shrink-0 flex items-center gap-0.5 text-[11px] font-typing" style={{color: 'var(--tv-warning)'}}>
+                  {unlocked ? `${stars}/3★` : 'Locked'}
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
 
   if (inLessonView) {
     const title = isPlacementMode
@@ -290,62 +380,112 @@ export const ClassroomScene: React.FC<ClassroomSceneProps> = ({
     const targetWpm = isPlacementMode ? 40 : activeLesson!.targetWpm;
 
     return (
-      <main className="mx-auto max-w-[1260px] px-4 py-6 sm:px-6 space-y-5">
-        {!isFocus && (
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  soundEngine.playUiTap();
-                  setActiveLesson(null);
-                  setIsPlacementMode(false);
-                  setResults(null);
-                }}
-                className="inline-flex items-center gap-1.5 text-xs font-medium hover:opacity-80"
-                style={{color: 'var(--tv-accent)'}}
-              >
-                <ArrowLeft className="w-3.5 h-3.5" aria-hidden="true" />
-                <span>Curriculum</span>
-              </button>
-              <h1 className="font-display text-2xl font-bold tracking-tight">{title}</h1>
+      <AdaptiveSceneLayout
+        playLocked={!results}
+        drawerOpen={lessonDrawerOpen}
+        drawerTitle="Classroom Curriculum"
+        onCloseDrawer={() => setLessonDrawerOpen(false)}
+        drawerContent={lessonSwitcherPanel}
+        topBar={
+          !isFocus ? (
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundEngine.playUiTap();
+                    setActiveLesson(null);
+                    setIsPlacementMode(false);
+                    setResults(null);
+                  }}
+                  className="inline-flex items-center gap-1.5 text-xs font-medium hover:opacity-80 shrink-0"
+                  style={{color: 'var(--tv-accent)'}}
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" aria-hidden="true" />
+                  <span>Curriculum</span>
+                </button>
+                <h1
+                  className="font-display font-bold tracking-tight truncate"
+                  style={{fontSize: 'var(--tv-text-xl)'}}
+                >
+                  {title}
+                </h1>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                {!screen.showSidePanels && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundEngine.playUiTap();
+                      setLessonDrawerOpen(true);
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-medium"
+                    style={{
+                      borderColor: 'var(--tv-border)',
+                      backgroundColor: 'var(--tv-surface)',
+                      color: 'var(--tv-text)',
+                    }}
+                  >
+                    <BookOpen className="w-3.5 h-3.5" style={{color: 'var(--tv-accent)'}} aria-hidden="true" />
+                    <span>Lessons</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundEngine.playUiTap();
+                    updateSetting('keyboardVisible', !settings.keyboardVisible);
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-medium"
+                  style={{
+                    borderColor: 'var(--tv-border)',
+                    backgroundColor: 'var(--tv-surface)',
+                    color: 'var(--tv-text)',
+                  }}
+                >
+                  {settings.keyboardVisible ? (
+                    <>
+                      <EyeOff className="w-3.5 h-3.5" aria-hidden="true" />
+                      <span>Hide Keyboard</span>
+                    </>
+                  ) : (
+                    <>
+                      <Eye className="w-3.5 h-3.5" aria-hidden="true" />
+                      <span>Show Keyboard</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
-
-            <button
-              type="button"
-              onClick={() => {
-                soundEngine.playUiTap();
-                updateSetting('keyboardVisible', !settings.keyboardVisible);
-              }}
-              className="inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-medium"
-              style={{
-                borderColor: 'var(--tv-border)',
-                backgroundColor: 'var(--tv-surface)',
-                color: 'var(--tv-text)',
-              }}
-            >
-              {settings.keyboardVisible ? (
-                <>
-                  <EyeOff className="w-3.5 h-3.5" aria-hidden="true" />
-                  <span>Hide Keyboard</span>
-                </>
-              ) : (
-                <>
-                  <Eye className="w-3.5 h-3.5" aria-hidden="true" />
-                  <span>Show Keyboard</span>
-                </>
-              )}
-            </button>
-          </div>
-        )}
-
-        <WpmHud
-          telemetry={telemetry}
-          personalBestWpm={progress?.bestWpm ?? 0}
-          targetWpm={targetWpm}
-          showGhostPace
-        />
-
+          ) : undefined
+        }
+        leftPanel={!isFocus ? lessonSwitcherPanel : undefined}
+        rightPanel={
+          !isFocus ? (
+            <>
+              <LiveSessionStatsPanel telemetry={telemetry} progress={progress} modeFilter="classroom" />
+              <CompactKeyHeatmapPanel keyMetrics={progress?.keyMetrics ?? {}} />
+            </>
+          ) : undefined
+        }
+        hud={
+          <WpmHud
+            telemetry={telemetry}
+            personalBestWpm={progress?.bestWpm ?? 0}
+            targetWpm={targetWpm}
+            dailyGoalMinutes={progress?.dailyGoalMinutes ?? 15}
+            todayActivitySeconds={getTodayActivitySeconds(progress)}
+            showGhostPace
+          />
+        }
+        belowMain={
+          !results && settings.keyboardVisible ? (
+            <VirtualKeyboard nextChar={telemetry.nextChar} showFingerGuide />
+          ) : undefined
+        }
+      >
         {results ? (
           <SessionResults
             stats={results}
@@ -379,47 +519,41 @@ export const ClassroomScene: React.FC<ClassroomSceneProps> = ({
             }}
           />
         ) : (
-          <div className="space-y-4">
-            {/* Chalkboard-inspired subtle lesson slate accent */}
-            <div
-              className="rounded-2xl p-1"
-              style={{
-                background:
-                  'linear-gradient(145deg, rgba(16, 185, 129, 0.16), rgba(34, 211, 238, 0.1))',
+          <div
+            className="rounded-2xl p-1"
+            style={{
+              background:
+                'linear-gradient(145deg, rgba(16, 185, 129, 0.16), rgba(34, 211, 238, 0.1))',
+            }}
+          >
+            <TypingArena
+              key={`lesson-${activeLesson?.id ?? 'placement'}-${runKey}`}
+              text={activeText}
+              timeLimitSec={null}
+              personalBestWpm={progress?.bestWpm ?? 0}
+              targetWpm={targetWpm}
+              modeLabel={title}
+              onTelemetry={setTelemetry}
+              onComplete={handleComplete}
+              onRestart={() => {
+                soundEngine.playUiTap();
+                setRunKey((k) => k + 1);
               }}
-            >
-              <TypingArena
-                key={`lesson-${activeLesson?.id ?? 'placement'}-${runKey}`}
-                text={activeText}
-                timeLimitSec={null}
-                personalBestWpm={progress?.bestWpm ?? 0}
-                targetWpm={targetWpm}
-                modeLabel={title}
-                onTelemetry={setTelemetry}
-                onComplete={handleComplete}
-                onRestart={() => {
-                  soundEngine.playUiTap();
-                  setRunKey((k) => k + 1);
-                }}
-              />
-            </div>
-
-            {settings.keyboardVisible && (
-              <VirtualKeyboard nextChar={telemetry.nextChar} showFingerGuide />
-            )}
+            />
           </div>
         )}
-      </main>
+      </AdaptiveSceneLayout>
     );
   }
 
-  const currentStage =
-    LESSON_STAGES.find((s) => s.id === selectedStageId) ?? LESSON_STAGES[0];
+  const stageStripCols = screen.width < 620 ? 2 : screen.width < 1040 ? 4 : 8;
+  const lessonGridCols =
+    screen.width < 660 ? 1 : screen.width < 1080 ? 2 : screen.width >= 1900 ? 4 : 3;
 
   return (
-    <main className="mx-auto max-w-[1360px] px-4 py-6 sm:px-6 space-y-6">
+    <main className="tv-fluid-container py-5 space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="space-y-1">
+        <div className="space-y-1 min-w-0">
           <button
             type="button"
             onClick={onBack}
@@ -429,7 +563,7 @@ export const ClassroomScene: React.FC<ClassroomSceneProps> = ({
             <ArrowLeft className="w-3.5 h-3.5" aria-hidden="true" />
             <span>Back to Hub (Esc)</span>
           </button>
-          <h1 className="font-display text-3xl font-bold tracking-tight">
+          <h1 className="font-display font-bold tracking-tight" style={{fontSize: 'var(--tv-text-2xl)'}}>
             Classroom Curriculum
           </h1>
           <p className="text-sm" style={{color: 'var(--tv-text-muted)'}}>
@@ -437,7 +571,7 @@ export const ClassroomScene: React.FC<ClassroomSceneProps> = ({
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3 shrink-0">
           <div
             className="tv-surface rounded-xl px-4 py-2 text-xs flex items-center gap-2"
             style={{color: 'var(--tv-text)'}}
@@ -477,7 +611,7 @@ export const ClassroomScene: React.FC<ClassroomSceneProps> = ({
       {/* 3D Isometric Floating Islands Lesson Path (omitted cleanly in Off mode) */}
       {showIsometricMap && (
         <section
-          className="tv-surface tv-dash-card relative h-[210px] sm:h-[235px] w-full rounded-2xl overflow-hidden"
+          className={`tv-surface tv-dash-card relative ${screen.height < 760 ? 'h-[180px]' : 'h-[230px]'} w-full rounded-2xl overflow-hidden`}
           aria-label="3D Isometric Lesson Map"
         >
           <ThreeCanvasHost
@@ -487,20 +621,23 @@ export const ClassroomScene: React.FC<ClassroomSceneProps> = ({
             className="w-full h-full"
           />
           <div
-            className="pointer-events-none absolute top-3 left-3 z-10 rounded-lg border px-2.5 py-1 text-[11px] font-medium"
+            className="pointer-events-none absolute top-3 left-3 z-10 rounded-lg border px-2.5 py-1 text-[11px] font-medium max-w-[90%] truncate"
             style={{
               backgroundColor: 'var(--tv-surface)',
               borderColor: 'var(--tv-border)',
               color: 'var(--tv-text-muted)',
             }}
           >
-            Floating Island Path · Click an island to jump to Stage {selectedStageId}: {currentStage.title}
+            Floating Island Path · Stage {selectedStageId}: {currentStage.title}
           </div>
         </section>
       )}
 
       {/* 8-Stage Selector Strip */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5">
+      <div
+        className="grid gap-2.5"
+        style={{gridTemplateColumns: `repeat(${stageStripCols}, minmax(0, 1fr))`}}
+      >
         {LESSON_STAGES.map((stage) => {
           const stageLessonsList = CLASSROOM_LESSONS.filter(
             (l) => l.stageId === stage.id,
@@ -520,7 +657,7 @@ export const ClassroomScene: React.FC<ClassroomSceneProps> = ({
                 soundEngine.playUiTap();
                 setSelectedStageId(stage.id);
               }}
-              className="rounded-xl border p-3 text-left transition-colors"
+              className="rounded-xl border p-3 text-left transition-colors min-w-0"
               style={{
                 borderColor: active ? 'var(--tv-accent)' : 'var(--tv-border)',
                 backgroundColor: active
@@ -531,12 +668,12 @@ export const ClassroomScene: React.FC<ClassroomSceneProps> = ({
             >
               <div className="flex items-center justify-between text-[11px]" style={{color: 'var(--tv-text-muted)'}}>
                 <span>Stage {stage.id}</span>
-                {!stageUnlocked && <Lock className="w-3 h-3" aria-hidden="true" />}
+                {!stageUnlocked && <Lock className="w-3 h-3 shrink-0" aria-hidden="true" />}
               </div>
               <div className="font-display text-sm font-bold mt-1 truncate">
                 {stage.title}
               </div>
-              <div className="text-[11px] font-typing tabular-nums mt-1" style={{color: 'var(--tv-accent)'}}>
+              <div className="text-[11px] font-typing tabular-nums mt-1 truncate" style={{color: 'var(--tv-accent)'}}>
                 {completedInStage}/{stageLessonsList.length} · {stage.targetWpm}+ WPM
               </div>
             </button>
@@ -545,26 +682,29 @@ export const ClassroomScene: React.FC<ClassroomSceneProps> = ({
       </div>
 
       {/* Chalkboard Stage Panel + Lesson Cards */}
-      <section className="tv-surface rounded-2xl p-6 space-y-5">
+      <section className="tv-surface rounded-2xl p-5 space-y-5">
         <div
           className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b"
           style={{borderColor: 'var(--tv-border)'}}
         >
-          <div>
-            <h2 className="font-display text-xl font-bold">
+          <div className="min-w-0">
+            <h2 className="font-display font-bold" style={{fontSize: 'var(--tv-text-lg)'}}>
               Stage {currentStage.id}: {currentStage.title}
             </h2>
             <p className="text-sm mt-0.5" style={{color: 'var(--tv-text-muted)'}}>
               {currentStage.description}
             </p>
           </div>
-          <div className="text-xs font-typing tabular-nums" style={{color: 'var(--tv-text-muted)'}}>
+          <div className="text-xs font-typing tabular-nums shrink-0" style={{color: 'var(--tv-text-muted)'}}>
             Pass target: <strong style={{color: 'var(--tv-text)'}}>{currentStage.minAccuracy}% accuracy</strong> ·{' '}
             <strong style={{color: 'var(--tv-accent)'}}>{currentStage.targetWpm} WPM</strong>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div
+          className="grid gap-4"
+          style={{gridTemplateColumns: `repeat(${lessonGridCols}, minmax(0, 1fr))`}}
+        >
           {stageLessons.map((lesson) => {
             const isUnlocked = lesson.index <= unlockedIndex;
             const stars = progress?.lessonStars[lesson.id] ?? 0;
@@ -572,7 +712,7 @@ export const ClassroomScene: React.FC<ClassroomSceneProps> = ({
             return (
               <div
                 key={`${selectedStageId}-${lesson.id}-${isUnlocked ? 1 : 0}-${stars}`}
-                className="tv-lesson-card-3d rounded-xl border p-4 flex flex-col justify-between gap-4"
+                className="tv-lesson-card-3d rounded-xl border p-4 flex flex-col justify-between gap-4 min-w-0"
                 style={{
                   backgroundColor: 'var(--tv-bg)',
                   borderColor: stars > 0 ? 'var(--tv-success)' : 'var(--tv-border)',
@@ -582,7 +722,7 @@ export const ClassroomScene: React.FC<ClassroomSceneProps> = ({
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between text-xs" style={{color: 'var(--tv-text-muted)'}}>
                     <span>Lesson {lesson.index + 1} · {lesson.targetWpm} WPM</span>
-                    <div className="flex items-center gap-0.5" aria-label={`${stars} stars`}>
+                    <div className="flex items-center gap-0.5 shrink-0" aria-label={`${stars} stars`}>
                       {[1, 2, 3].map((n) => (
                         <Star
                           key={n}
@@ -602,7 +742,7 @@ export const ClassroomScene: React.FC<ClassroomSceneProps> = ({
                         aria-hidden="true"
                       />
                     )}
-                    <span>{lesson.title}</span>
+                    <span className="truncate">{lesson.title}</span>
                   </h3>
                   <p className="text-xs leading-relaxed" style={{color: 'var(--tv-text-muted)'}}>
                     {lesson.subtitle}

@@ -8,6 +8,7 @@ import type {
   DetailPreviewStats,
 } from '@/src/three/scenes/detailPreviewScene';
 import type {GraphicsDetailLevel} from '@/src/types/app';
+import {useScreenInfo} from '@/src/utils/screenInfo';
 
 interface DetailPreviewModalProps {
   open: boolean;
@@ -22,6 +23,7 @@ const PREVIEW_OPTIONS: Array<{id: GraphicsDetailLevel; label: string; note: stri
 
 export const DetailPreviewModal: React.FC<DetailPreviewModalProps> = ({open, onClose}) => {
   const gfx = useGraphicsMode();
+  const screen = useScreenInfo();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const handleRef = useRef<DetailPreviewHandle | null>(null);
 
@@ -98,7 +100,7 @@ export const DetailPreviewModal: React.FC<DetailPreviewModalProps> = ({open, onC
       onClick={onClose}
     >
       <div
-        className="tv-surface w-full max-w-xl rounded-2xl border p-5 shadow-2xl space-y-4"
+        className="tv-surface w-[min(100%,36rem)] max-h-[92%] overflow-y-auto rounded-2xl border p-5 shadow-2xl space-y-4"
         style={{borderColor: 'var(--tv-border)'}}
         onClick={(e) => e.stopPropagation()}
       >
@@ -163,7 +165,7 @@ export const DetailPreviewModal: React.FC<DetailPreviewModalProps> = ({open, onC
         {/* Interactive Rotating Trophy + Keycap Viewport */}
         <div
           ref={containerRef}
-          className="w-full h-64 rounded-xl border overflow-hidden"
+          className={`w-full rounded-xl border overflow-hidden ${screen.height < 690 ? 'h-40' : 'h-60'}`}
           style={{backgroundColor: '#070B15', borderColor: 'var(--tv-border)'}}
           aria-hidden="true"
         />
@@ -203,11 +205,11 @@ export const DetailPreviewModal: React.FC<DetailPreviewModalProps> = ({open, onC
           </div>
         </div>
 
-        <div className="flex items-center justify-between gap-2 pt-1">
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
           <span className="text-[11px] font-typing" style={{color: 'var(--tv-text-muted)'}}>
             {stats.renderWidth > 0 ? `${stats.renderWidth}x${stats.renderHeight} px` : ''}
           </span>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={onClose}

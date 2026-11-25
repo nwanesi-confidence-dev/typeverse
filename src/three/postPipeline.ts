@@ -179,6 +179,12 @@ export function createPostPipeline(
       streaksPass.uniforms.uTime.value = elapsedSec;
     },
     dispose() {
+      bloomPass?.dispose();
+      vignettePass?.dispose();
+      bokehPass?.dispose();
+      streaksPass?.dispose();
+      smaaPass?.dispose();
+      outputPass.dispose();
       composer.dispose();
       renderTarget.dispose();
     },

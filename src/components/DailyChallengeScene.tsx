@@ -7,6 +7,11 @@ import {
   Sparkles,
 } from 'lucide-react';
 import {soundEngine} from '@/src/audio/soundEngine';
+import {AdaptiveSceneLayout} from '@/src/components/AdaptiveSceneLayout';
+import {
+  CompactKeyHeatmapPanel,
+  LiveSessionStatsPanel,
+} from '@/src/components/LiveSessionSidePanels';
 import {SessionResults} from '@/src/components/SessionResults';
 import {TypingArena} from '@/src/components/TypingArena';
 import {WpmHud} from '@/src/components/WpmHud';
@@ -29,7 +34,12 @@ import {
   markFreshPacksUsed,
   maybePrefetchFreshPack,
 } from '@/src/utils/freshWordsClient';
-import {getLocalDateKey, recordSessionAndBadges} from '@/src/utils/progression';
+import {
+  getLocalDateKey,
+  getTodayActivitySeconds,
+  recordSessionAndBadges,
+} from '@/src/utils/progression';
+import {useScreenInfo} from '@/src/utils/screenInfo';
 
 interface DailyChallengeSceneProps {
   onBack: () => void;
@@ -87,6 +97,8 @@ export const DailyChallengeScene: React.FC<DailyChallengeSceneProps> = ({
   activeProfileId,
 }) => {
   const {settings} = useAppearance();
+  const screen = useScreenInfo();
+  const [streakDrawerOpen, setStreakDrawerOpen] = useState(false);
   const todayKey = useMemo(() => getLocalDateKey(), []);
   const dailySeed = useMemo(() => dateKeyToSeed(todayKey), [todayKey]);
   const dailyTheme = DAILY_THEMES[dailySeed % DAILY_THEMES.length];
@@ -290,131 +302,172 @@ export const DailyChallengeScene: React.FC<DailyChallengeSceneProps> = ({
   const todayRecord = progress?.dailyChallengeHistory?.[todayKey];
   const totalDailyDone = Object.keys(progress?.dailyChallengeHistory ?? {}).length;
   const isFocus = settings.layout === 'focus';
+  const showInlineSevenDay =
+    !isFocus &&
+    !screen.showSidePanels &&
+    screen.layoutProfile !== 'compact' &&
+    screen.height >= 860 &&
+    !results;
+
+  const dailyCheckInPanel = (
+    <section
+      className="tv-surface rounded-2xl p-4 space-y-3"
+      aria-label="Daily Challenge 7-day history"
+    >
+      <div className="space-y-1">
+        <div className="flex items-center gap-2 text-xs font-semibold">
+          {todayRecord ? (
+            <>
+              <CheckCircle2 className="w-4 h-4 shrink-0" style={{color: 'var(--tv-success)'}} aria-hidden="true" />
+              <span>
+                Completed today · Best {todayRecord.bestWpm} WPM ({todayRecord.bestAccuracy.toFixed(1)}%)
+              </span>
+            </>
+          ) : (
+            <>
+              <Sparkles className="w-4 h-4 shrink-0" style={{color: 'var(--tv-accent)'}} aria-hidden="true" />
+              <span>
+                Complete today&apos;s {dailyTheme.toLowerCase()} passage to lock in your check-in
+              </span>
+            </>
+          )}
+        </div>
+        <div className="text-[11px]" style={{color: 'var(--tv-text-muted)'}}>
+          {fromFreshPack
+            ? "Sourced from today's cached Word Pack."
+            : 'Sourced from the deterministic offline word bank.'}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-7 gap-1.5">
+        {last7Days.map((day) => {
+          const isToday = day.dateKey === todayKey;
+          return (
+            <div
+              key={day.dateKey}
+              title={
+                day.completed
+                  ? `${day.dateKey}: ${day.wpm} WPM`
+                  : `${day.dateKey}: not completed`
+              }
+              className="rounded-xl border py-1.5 px-1 text-center"
+              style={{
+                borderColor: isToday
+                  ? 'var(--tv-accent)'
+                  : day.completed
+                    ? 'var(--tv-success)'
+                    : 'var(--tv-border)',
+                backgroundColor: day.completed
+                  ? 'var(--tv-surface-elevated)'
+                  : 'var(--tv-bg)',
+              }}
+            >
+              <div className="text-[10px]" style={{color: 'var(--tv-text-muted)'}}>
+                {day.label}
+              </div>
+              <div
+                className="font-typing text-xs font-bold tabular-nums mt-0.5"
+                style={{
+                  color: day.completed ? 'var(--tv-success)' : 'var(--tv-text-muted)',
+                }}
+              >
+                {day.completed ? `${day.wpm}` : '—'}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
 
   return (
-    <main className="mx-auto max-w-[1260px] px-4 py-6 sm:px-6 space-y-5">
-      {!isFocus && (
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="space-y-1">
-            <button
-              type="button"
-              onClick={onBack}
-              className="inline-flex items-center gap-1.5 text-xs font-medium hover:opacity-80"
-              style={{color: 'var(--tv-accent)'}}
-            >
-              <ArrowLeft className="w-3.5 h-3.5" aria-hidden="true" />
-              <span>Back to Hub (Esc)</span>
-            </button>
-            <div className="flex flex-wrap items-center gap-3">
-              <h1 className="font-display text-3xl font-bold tracking-tight">
+    <AdaptiveSceneLayout
+      playLocked={!results}
+      drawerOpen={streakDrawerOpen}
+      drawerTitle="Daily Streak & 7-Day Check-In"
+      onCloseDrawer={() => setStreakDrawerOpen(false)}
+      drawerContent={
+        <>
+          {dailyCheckInPanel}
+          <LiveSessionStatsPanel telemetry={telemetry} progress={progress} modeFilter="daily-challenge" />
+        </>
+      }
+      topBar={
+        !isFocus ? (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-3 min-w-0">
+              <button
+                type="button"
+                onClick={onBack}
+                className="inline-flex items-center gap-1.5 text-xs font-medium hover:opacity-80 shrink-0"
+                style={{color: 'var(--tv-accent)'}}
+              >
+                <ArrowLeft className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>Hub (Esc)</span>
+              </button>
+              <h1
+                className="font-display font-bold tracking-tight truncate"
+                style={{fontSize: 'var(--tv-text-xl)'}}
+              >
                 Daily Challenge
               </h1>
-              <span className="font-typing text-xs font-semibold" style={{color: 'var(--tv-accent)'}}>
+              <span className="font-typing text-xs font-semibold truncate" style={{color: 'var(--tv-accent)'}}>
                 {todayKey} · {dailyTheme}
               </span>
             </div>
-            <p className="text-sm" style={{color: 'var(--tv-text-muted)'}}>
-              Everyone receives the same date-seeded passage today—ready online or offline.
-            </p>
-          </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <div
-              className="tv-surface rounded-xl px-3.5 py-2 flex items-center gap-2 text-xs font-semibold"
-              style={{color: 'var(--tv-warning)'}}
-            >
-              <Flame className="w-4 h-4" aria-hidden="true" />
-              <span className="tabular-nums">{progress?.streakDays ?? 0} day streak</span>
-            </div>
-            <div className="tv-surface rounded-xl px-3.5 py-2 flex items-center gap-2 text-xs font-semibold">
-              <CalendarCheck className="w-4 h-4" style={{color: 'var(--tv-accent)'}} aria-hidden="true" />
-              <span className="tabular-nums">{totalDailyDone} dailies finished</span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 7-Day Check-In & Today's Status */}
-      {!isFocus && (
-        <section
-          className="tv-surface rounded-2xl p-4 flex flex-wrap items-center justify-between gap-4"
-          aria-label="Daily Challenge 7-day history"
-        >
-          <div className="space-y-1">
-            <div className="flex items-center gap-2 text-sm font-semibold">
-              {todayRecord ? (
-                <>
-                  <CheckCircle2 className="w-4 h-4" style={{color: 'var(--tv-success)'}} aria-hidden="true" />
-                  <span>
-                    Completed today · Best {todayRecord.bestWpm} WPM ({todayRecord.bestAccuracy.toFixed(1)}%)
-                  </span>
-                </>
-              ) : (
-                <>
-                  <Sparkles className="w-4 h-4" style={{color: 'var(--tv-accent)'}} aria-hidden="true" />
-                  <span>
-                    Complete today&apos;s {dailyTheme.toLowerCase()} passage to lock in your daily check-in
-                  </span>
-                </>
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <div
+                className="tv-surface rounded-xl px-3 py-1.5 flex items-center gap-1.5 text-xs font-semibold"
+                style={{color: 'var(--tv-warning)'}}
+              >
+                <Flame className="w-3.5 h-3.5" aria-hidden="true" />
+                <span className="tabular-nums">{progress?.streakDays ?? 0}d streak</span>
+              </div>
+              {!screen.showSidePanels && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundEngine.playUiTap();
+                    setStreakDrawerOpen(true);
+                  }}
+                  className="tv-surface rounded-xl px-3 py-1.5 flex items-center gap-1.5 text-xs font-semibold"
+                >
+                  <CalendarCheck className="w-3.5 h-3.5" style={{color: 'var(--tv-accent)'}} aria-hidden="true" />
+                  <span className="tabular-nums">{totalDailyDone} · 7-Day Log</span>
+                </button>
               )}
             </div>
-            <div className="text-xs" style={{color: 'var(--tv-text-muted)'}}>
-              {fromFreshPack
-                ? "Sourced from today's cached Word Pack."
-                : 'Sourced from the deterministic offline word bank.'}
-            </div>
           </div>
-
-          <div className="flex items-center gap-1.5">
-            {last7Days.map((day) => {
-              const isToday = day.dateKey === todayKey;
-              return (
-                <div
-                  key={day.dateKey}
-                  title={
-                    day.completed
-                      ? `${day.dateKey}: ${day.wpm} WPM`
-                      : `${day.dateKey}: not completed`
-                  }
-                  className="w-11 rounded-xl border py-1.5 px-1 text-center"
-                  style={{
-                    borderColor: isToday
-                      ? 'var(--tv-accent)'
-                      : day.completed
-                        ? 'var(--tv-success)'
-                        : 'var(--tv-border)',
-                    backgroundColor: day.completed
-                      ? 'var(--tv-surface-elevated)'
-                      : 'var(--tv-bg)',
-                  }}
-                >
-                  <div className="text-[10px]" style={{color: 'var(--tv-text-muted)'}}>
-                    {day.label}
-                  </div>
-                  <div
-                    className="font-typing text-xs font-bold tabular-nums mt-0.5"
-                    style={{
-                      color: day.completed ? 'var(--tv-success)' : 'var(--tv-text-muted)',
-                    }}
-                  >
-                    {day.completed ? `${day.wpm}` : '—'}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-      )}
-
-      {/* Live WPM Meter HUD */}
-      <WpmHud
-        telemetry={telemetry}
-        personalBestWpm={progress?.bestWpm ?? 0}
-        targetWpm={progress?.targetWpm ?? 60}
-        showGhostPace
-      />
-
-      {/* Arena OR Results */}
+        ) : undefined
+      }
+      leftPanel={
+        !isFocus ? (
+          <>
+            {dailyCheckInPanel}
+            <LiveSessionStatsPanel telemetry={telemetry} progress={progress} modeFilter="daily-challenge" />
+          </>
+        ) : undefined
+      }
+      rightPanel={
+        !isFocus ? (
+          <CompactKeyHeatmapPanel keyMetrics={progress?.keyMetrics ?? {}} />
+        ) : undefined
+      }
+      hud={
+        <div className="space-y-3">
+          {showInlineSevenDay && dailyCheckInPanel}
+          <WpmHud
+            telemetry={telemetry}
+            personalBestWpm={progress?.bestWpm ?? 0}
+            targetWpm={progress?.targetWpm ?? 60}
+            dailyGoalMinutes={progress?.dailyGoalMinutes ?? 15}
+            todayActivitySeconds={getTodayActivitySeconds(progress)}
+            showGhostPace
+          />
+        </div>
+      }
+    >
       {results ? (
         <SessionResults
           stats={results}
@@ -453,6 +506,6 @@ export const DailyChallengeScene: React.FC<DailyChallengeSceneProps> = ({
           />
         )
       )}
-    </main>
+    </AdaptiveSceneLayout>
   );
 };

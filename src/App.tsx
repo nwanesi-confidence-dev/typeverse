@@ -3,6 +3,7 @@ import {AppearanceDrawer} from '@/src/components/AppearanceDrawer';
 import {FirstRunGraphicsDialog} from '@/src/components/FirstRunGraphicsDialog';
 import {Header} from '@/src/components/Header';
 import {InstallHelpModal} from '@/src/components/InstallHelpModal';
+import {LayoutTesterBar} from '@/src/components/LayoutTesterBar';
 import {ProfileManagerModal} from '@/src/components/ProfileManagerModal';
 import {ShortcutsModal} from '@/src/components/ShortcutsModal';
 import {SpeedTestOverlay} from '@/src/components/SpeedTestOverlay';
@@ -15,12 +16,14 @@ import {
   getActiveProfileId,
   loadProfileProgress,
   loadProfiles,
+  subscribeProfileProgressChanged,
 } from '@/src/db/storage';
 import {
   useOnlineStatus,
   usePWAInstall,
   useServiceWorkerUpdate,
 } from '@/src/pwa/usePWA';
+import {getTodayActivitySeconds} from '@/src/utils/progression';
 import type {ProfileProgress, SceneId, UserProfile} from '@/src/types/app';
 import type {DesktopUpdateEvent} from '@/src/types/desktop';
 import type {TypingTelemetrySnapshot} from '@/src/types/typing';
@@ -32,6 +35,7 @@ import {
   ensureSeedPacksLoaded,
   maybePrefetchFreshPack,
 } from '@/src/utils/freshWordsClient';
+import {attachScreenRoot, useScreenInfo} from '@/src/utils/screenInfo';
 
 const HubScene = React.lazy(() =>
   import('@/src/components/HubScene').then((m) => ({default: m.HubScene})),
@@ -102,6 +106,7 @@ function TypeVerseShell() {
 
   const {settings} = useAppearance();
   const gfx = useGraphicsMode();
+  const screen = useScreenInfo();
   const isOnline = useOnlineStatus();
   const {canNativeInstall, isInstalled, isIOS, install} = usePWAInstall();
   const {needRefresh, reloadApp, dismissUpdate} = useServiceWorkerUpdate();
@@ -140,6 +145,11 @@ function TypeVerseShell() {
   useEffect(() => {
     if (!activeProfileId) return;
     void loadProfileProgress(activeProfileId).then(setProfileProgress);
+    return subscribeProfileProgressChanged((changedProfileId) => {
+      if (changedProfileId === activeProfileId) {
+        void loadProfileProgress(activeProfileId).then(setProfileProgress);
+      }
+    });
   }, [activeProfileId, activeScene]);
 
   useEffect(() => {
@@ -214,10 +224,6 @@ function TypeVerseShell() {
     }
   };
 
-  if (isTouchOnlyPhone && !touchDismissed) {
-    return <TouchDeviceGate onDismiss={() => setTouchDismissed(true)} />;
-  }
-
   const activeProfile =
     profiles.find((p) => p.id === activeProfileId) ?? profiles[0] ?? null;
   const lastSession = profileProgress?.sessions[0];
@@ -255,47 +261,84 @@ function TypeVerseShell() {
     activeScene === 'daily-challenge' ||
     activeScene === 'arcade';
 
-  return (
-    <div className="min-h-screen flex flex-col">
-      <a
-        href="#main-content"
-        className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:rounded-lg focus:px-4 focus:py-2 focus:text-xs focus:font-semibold"
-        style={{
-          backgroundColor: 'var(--tv-accent)',
-          color: 'var(--tv-accent-fg)',
-        }}
-      >
-        Skip to main content
-      </a>
+  const emulated = screen.emulatedSize;
+  const previewScale = emulated
+    ? screen.fitToWindow
+      ? Math.min(
+          (screen.hostWindowWidth - 24) / emulated.width,
+          (screen.hostWindowHeight - 64) / emulated.height,
+          1,
+        )
+      : 1
+    : 1;
 
-      <div className="no-print">
-        <Header
-          activeScene={activeScene}
-          onNavigate={setActiveScene}
-          isOnline={isOnline}
-          onOpenAppearance={() => setAppearanceOpen(true)}
-          onOpenShortcuts={() => setShortcutsOpen(true)}
-          isInstalled={isInstalled}
-          onInstallClick={handleInstallClick}
-          activeProfile={activeProfile}
-          onOpenProfiles={() => setProfilesOpen(true)}
-        />
-      </div>
+  const shellContent = (
+    <div
+      id="app-shell-root"
+      ref={attachScreenRoot}
+      data-play-screen={hasFullHud ? 'true' : 'false'}
+      className={emulated ? 'tv-app-shell tv-app-shell--emulated' : 'tv-app-shell'}
+      style={
+        emulated
+          ? {
+              width: `${emulated.width}px`,
+              height: `${emulated.height}px`,
+              transform: `scale(${previewScale})`,
+              transformOrigin: 'top left',
+              backgroundColor: 'var(--tv-bg)',
+            }
+          : {backgroundColor: 'var(--tv-bg)'}
+      }
+    >
+      {isTouchOnlyPhone && !touchDismissed ? (
+        <TouchDeviceGate onDismiss={() => setTouchDismissed(true)} />
+      ) : (
+        <>
+          <a
+            href="#main-content"
+            className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:rounded-lg focus:px-4 focus:py-2 focus:text-xs focus:font-semibold"
+            style={{
+              backgroundColor: 'var(--tv-accent)',
+              color: 'var(--tv-accent-fg)',
+            }}
+          >
+            Skip to main content
+          </a>
 
-      {!hasFullHud && (
-        <div className="no-print mx-auto w-full max-w-[1360px] px-4 pt-4 sm:px-6">
-          <WpmHud
-            telemetry={compactTelemetry}
-            personalBestWpm={profileProgress?.bestWpm ?? 0}
-            targetWpm={profileProgress?.targetWpm ?? 60}
-            compact
-          />
-        </div>
-      )}
+          <div className="no-print shrink-0">
+            <Header
+              activeScene={activeScene}
+              onNavigate={setActiveScene}
+              isOnline={isOnline}
+              onOpenAppearance={() => setAppearanceOpen(true)}
+              onOpenShortcuts={() => setShortcutsOpen(true)}
+              isInstalled={isInstalled}
+              onInstallClick={handleInstallClick}
+              activeProfile={activeProfile}
+              onOpenProfiles={() => setProfilesOpen(true)}
+            />
+          </div>
 
-      <div id="main-content" tabIndex={-1} className="flex-1 outline-none">
-        <div key={activeScene} className="tv-scene-enter">
-          <Suspense fallback={<SceneLoaderFallback />}>
+          {!hasFullHud && (
+            <div
+              className={`no-print shrink-0 tv-fluid-container ${
+                screen.layoutProfile === 'compact' || screen.height < 720 ? 'pt-2' : 'pt-3'
+              }`}
+            >
+              <WpmHud
+                telemetry={compactTelemetry}
+                personalBestWpm={profileProgress?.bestWpm ?? 0}
+                targetWpm={profileProgress?.targetWpm ?? 60}
+                dailyGoalMinutes={profileProgress?.dailyGoalMinutes ?? 15}
+                todayActivitySeconds={getTodayActivitySeconds(profileProgress)}
+                compact
+              />
+            </div>
+          )}
+
+          <div id="main-content" tabIndex={-1} className="tv-main-viewport outline-none">
+            <div key={activeScene} className="tv-scene-enter h-full min-h-0">
+              <Suspense fallback={<SceneLoaderFallback />}>
             {activeScene === 'hub' ? (
               <HubScene
                 onNavigate={setActiveScene}
@@ -383,6 +426,35 @@ function TypeVerseShell() {
       />
       <FirstRunGraphicsDialog />
       <SpeedTestOverlay />
+        </>
+      )}
+    </div>
+  );
+
+  if (!emulated) {
+    return shellContent;
+  }
+
+  return (
+    <div
+      className={
+        screen.fitToWindow
+          ? 'fixed inset-0 flex items-center justify-center overflow-hidden p-3 pb-16'
+          : 'fixed inset-0 overflow-auto p-4 pb-20'
+      }
+      style={{backgroundColor: '#02040a'}}
+    >
+      <div
+        className="relative shrink-0 overflow-hidden rounded-lg border shadow-2xl"
+        style={{
+          width: `${Math.max(1, Math.round(emulated.width * previewScale))}px`,
+          height: `${Math.max(1, Math.round(emulated.height * previewScale))}px`,
+          borderColor: 'var(--tv-accent)',
+        }}
+      >
+        {shellContent}
+      </div>
+      <LayoutTesterBar />
     </div>
   );
 }

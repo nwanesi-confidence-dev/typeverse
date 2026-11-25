@@ -5,11 +5,13 @@ import {
   BUBBLE_POP_FIELD_HEIGHT,
   BubblePopEngine,
 } from '@/src/arcade/engine/bubblePopEngine';
+import {CANONICAL_PLAY_WIDTH} from '@/src/arcade/playZone';
 import {
   renderBubblePop2D,
   type PopBurst2D,
 } from '@/src/arcade/renderer-2d/BubblePop2D';
 import {BubblePop3D} from '@/src/arcade/renderer-3d/BubblePop3D';
+import {useCanvas2DResizeObserver} from '@/src/arcade/usePlayfieldSize';
 import {soundEngine} from '@/src/audio/soundEngine';
 import {
   DIFFICULTY_META,
@@ -45,6 +47,7 @@ export const BubblePopGame: React.FC<ArcadeCommonProps> = ({
     lockedMode,
     show3D,
     webgl2Supported,
+    isSoftwareRenderer,
     contextLostOpen,
     webglRetryNonce,
     markContextLost,
@@ -147,10 +150,9 @@ export const BubblePopGame: React.FC<ArcadeCommonProps> = ({
       if (res.correct) {
         if (res.popped) {
           soundEngine.playBubblePop(res.combo);
-          const canvas = canvasRef.current;
-          if (!show3D && canvas && res.burstEvent) {
+          if (!show3D && res.burstEvent) {
             bursts2DRef.current.push({
-              x: res.burstEvent.xNorm * canvas.clientWidth,
+              x: res.burstEvent.xNorm * CANONICAL_PLAY_WIDTH,
               y: res.burstEvent.yPx,
               r: res.burstEvent.radius,
               life: 1,
@@ -189,6 +191,26 @@ export const BubblePopGame: React.FC<ArcadeCommonProps> = ({
     };
   }, [lockedMode, show3D, onFinish, onExit]);
 
+  const render2DFrame = useCallback(
+    (dtSec: number) => {
+      if (show3D || !canvasRef.current) return;
+      const eng = engineRef.current;
+      renderBubblePop2D({
+        canvas: canvasRef.current,
+        state: eng.state,
+        goal: eng.cfg.goal,
+        multiLetter: eng.cfg.multiLetter,
+        bursts: bursts2DRef.current,
+        dtSec,
+        resolvedMode: lockedMode,
+        isSoftwareRenderer,
+      });
+    },
+    [show3D, lockedMode, isSoftwareRenderer],
+  );
+
+  useCanvas2DResizeObserver(canvasRef, !show3D, () => render2DFrame(0));
+
   useEffect(() => {
     let raf = 0;
     let lastTs = performance.now();
@@ -198,10 +220,8 @@ export const BubblePopGame: React.FC<ArcadeCommonProps> = ({
       const dt = Math.min(0.05, (now - lastTs) / 1000);
       lastTs = now;
       const eng = engineRef.current;
-      const canvas = canvasRef.current;
 
-      const h = !show3D && canvas ? canvas.clientHeight : BUBBLE_POP_FIELD_HEIGHT;
-      const stepRes = eng.step(dt, h, now);
+      const stepRes = eng.step(dt, BUBBLE_POP_FIELD_HEIGHT, now);
 
       if (stepRes.escapedCount > 0) {
         soundEngine.playHitChime('miss');
@@ -214,16 +234,7 @@ export const BubblePopGame: React.FC<ArcadeCommonProps> = ({
         });
       }
 
-      if (!show3D && canvas) {
-        renderBubblePop2D({
-          canvas,
-          state: eng.state,
-          goal: eng.cfg.goal,
-          multiLetter: eng.cfg.multiLetter,
-          bursts: bursts2DRef.current,
-          dtSec: dt,
-        });
-      }
+      render2DFrame(dt);
 
       if (now - lastHud >= 33) {
         lastHud = now;
@@ -243,7 +254,7 @@ export const BubblePopGame: React.FC<ArcadeCommonProps> = ({
 
     raf = window.requestAnimationFrame(loop);
     return () => window.cancelAnimationFrame(raf);
-  }, [difficulty, focusRowId, lockedMode, show3D, onFinish, onTelemetry]);
+  }, [difficulty, focusRowId, lockedMode, render2DFrame, show3D, onFinish, onTelemetry]);
 
   const bubble3DState: BubblePop3DState = useMemo(
     () => ({
@@ -260,9 +271,9 @@ export const BubblePopGame: React.FC<ArcadeCommonProps> = ({
   };
 
   return (
-    <div className="tv-surface rounded-2xl p-5 space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
+    <div className="tv-surface rounded-2xl p-3 sm:p-4 flex flex-col gap-2.5 flex-1 min-h-0">
+      <div className="shrink-0 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 min-w-0">
           <span className="text-xs font-medium" style={{color: 'var(--tv-text-muted)'}}>
             Focus row:
           </span>
@@ -295,7 +306,7 @@ export const BubblePopGame: React.FC<ArcadeCommonProps> = ({
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
             onClick={togglePause}
@@ -330,7 +341,7 @@ export const BubblePopGame: React.FC<ArcadeCommonProps> = ({
         />
       )}
 
-      <div className="relative rounded-xl overflow-hidden border" style={{borderColor: 'var(--tv-border)'}}>
+      <div className="relative flex-1 min-h-[200px] rounded-xl overflow-hidden border" style={{borderColor: 'var(--tv-border)'}}>
         {show3D ? (
           <BubblePop3D
             gameId="bubble-pop"
@@ -344,7 +355,7 @@ export const BubblePopGame: React.FC<ArcadeCommonProps> = ({
         ) : (
           <canvas
             ref={canvasRef}
-            className="block w-full h-[360px]"
+            className="block w-full h-full"
             aria-label="Bubble Pop canvas"
           />
         )}

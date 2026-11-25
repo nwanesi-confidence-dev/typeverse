@@ -111,3 +111,42 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+  layout-audit:
+    name: Layout Audit (Chromium Multi-Viewport)
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout latest branch commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Install Playwright Chromium & system libs
+        run: npx playwright install --with-deps chromium
+
+      - name: Build production web bundle
+        run: npm run build:web
+
+      - name: Run Playwright responsive layout audit across viewports
+        run: npm run test:layout
+
+      - name: Upload layout screenshots artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: typeverse-layout-screenshots
+          path: artifacts/playwright-screenshots
+          retention-days: 14
+

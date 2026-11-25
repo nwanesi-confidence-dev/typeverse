@@ -153,6 +153,47 @@ export function getLocalDateKey(date: Date = new Date()): string {
   return `${y}-${m}-${d}`;
 }
 
+export function getTodayActivitySeconds(
+  progress?: ProfileProgress | null,
+  dateKey: string = getLocalDateKey(),
+): number {
+  return Math.max(0, progress?.dailyActivity?.[dateKey]?.seconds ?? 0);
+}
+
+export interface DailyGoalProgressSnapshot {
+  goalMinutes: number;
+  totalSeconds: number;
+  todayMinutes: number;
+  pct: number;
+  goalReached: boolean;
+}
+
+export function computeDailyGoalProgress(params: {
+  dailyGoalMinutes?: number | null;
+  savedTodaySeconds?: number | null;
+  liveElapsedMs?: number | null;
+  includeLiveElapsed?: boolean;
+}): DailyGoalProgressSnapshot {
+  const rawGoal = params.dailyGoalMinutes ?? 15;
+  const goalMinutes =
+    Number.isFinite(rawGoal) && rawGoal > 0 ? Math.max(1, Math.round(rawGoal)) : 15;
+  const savedSeconds = Math.max(0, params.savedTodaySeconds ?? 0);
+  const liveSeconds =
+    params.includeLiveElapsed && (params.liveElapsedMs ?? 0) > 0
+      ? Math.floor((params.liveElapsedMs ?? 0) / 1000)
+      : 0;
+  const totalSeconds = savedSeconds + liveSeconds;
+  const todayMinutes = Math.round((totalSeconds / 60) * 10) / 10;
+  const pct = Math.min(100, Math.round((todayMinutes / goalMinutes) * 100));
+  return {
+    goalMinutes,
+    totalSeconds,
+    todayMinutes,
+    pct,
+    goalReached: todayMinutes >= goalMinutes,
+  };
+}
+
 export async function recordSessionAndBadges(
   progress: ProfileProgress,
   completed: CompletedSessionStats,

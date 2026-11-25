@@ -2,9 +2,11 @@ import React from 'react';
 import {Box, Layers, Monitor, Sparkles} from 'lucide-react';
 import {soundEngine} from '@/src/audio/soundEngine';
 import {graphicsModeService, useGraphicsMode} from '@/src/graphics/graphicsModeService';
+import {useScreenInfo} from '@/src/utils/screenInfo';
 
 export const FirstRunGraphicsDialog: React.FC = () => {
   const gfx = useGraphicsMode();
+  const screen = useScreenInfo();
 
   if (!gfx.initialized || gfx.firstRunDismissed || gfx.speedTestStatus.running) {
     return null;
@@ -43,7 +45,9 @@ export const FirstRunGraphicsDialog: React.FC = () => {
       aria-labelledby="first-run-graphics-title"
     >
       <div
-        className="tv-surface w-full max-w-2xl rounded-2xl p-6 sm:p-8 shadow-2xl space-y-6"
+        className={`tv-surface w-[min(100%,42rem)] max-h-[92%] overflow-y-auto rounded-2xl shadow-2xl space-y-5 ${
+          screen.height < 680 ? 'p-5' : 'p-6 sm:p-7'
+        }`}
         style={{borderColor: 'var(--tv-border)'}}
       >
         <div className="space-y-1.5">
@@ -59,7 +63,7 @@ export const FirstRunGraphicsDialog: React.FC = () => {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+        <div className={`grid gap-3.5 ${screen.width < 640 ? 'grid-cols-1' : 'grid-cols-3'}`}>
           {/* Card 1: Auto */}
           <button
             type="button"

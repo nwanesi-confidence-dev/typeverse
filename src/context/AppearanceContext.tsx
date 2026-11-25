@@ -12,6 +12,7 @@ import {
   type ThemeId,
 } from '@/src/types/app';
 import {tCopy, type CopyKey} from '@/src/utils/copy';
+import {screenInfoService} from '@/src/utils/screenInfo';
 
 export interface ThemeMeta {
   id: ThemeId;
@@ -146,6 +147,11 @@ export const AppearanceProvider: React.FC<{children: React.ReactNode}> = ({child
       gfx.hardwareReport.prefersReducedMotion,
       gfx.effectiveMode,
     );
+    screenInfoService.setPreferences({
+      layoutPreference: settings.layout,
+      interfaceSize: settings.interfaceSize,
+      widePanels: settings.widePanels,
+    });
     soundEngine.setVolume(settings.soundVolume);
   }, [settings, gfx.spec.enableDepthUi, gfx.hardwareReport.prefersReducedMotion, gfx.effectiveMode]);
 
